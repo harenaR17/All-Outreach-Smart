@@ -6,8 +6,9 @@ import { useAuth } from '@/components/auth/AuthContext'
 import { Sidebar } from '@/components/Sidebar'
 import { Header } from '@/components/Header'
 import { Loader2, Send } from 'lucide-react'
+import { isSupabaseBrowserConfigured } from '@/lib/supabase/client'
 
-const PUBLIC_ROUTES = ['/login', '/auth/update-password', '/auth/callback']
+const PUBLIC_ROUTES = ['/login', '/setup', '/auth/update-password', '/auth/callback']
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -18,17 +19,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (route) => pathname === route || pathname.startsWith(route + '/')
   )
 
+  const isConfigured = isSupabaseBrowserConfigured()
+
   useEffect(() => {
     if (loading) return
+
+    // If Supabase is not configured, redirect to setup wizard
+    if (!isConfigured && pathname !== '/setup') {
+      router.push('/setup')
+      return
+    }
+
+    // If setup is done but user navigates to /setup, redirect away
+    if (isConfigured && pathname === '/setup') {
+      router.push('/')
+      return
+    }
 
     if (!isPublicRoute && !user) {
       router.push('/login')
     } else if (isPublicRoute && user && pathname === '/login') {
       router.push('/')
     }
-  }, [user, loading, isPublicRoute, pathname, router])
+  }, [user, loading, isPublicRoute, pathname, router, isConfigured])
 
-  // If on public pages (Login, Password Setup, etc.), render standalone layout
+  // If on public pages (Login, Password Setup, Setup, etc.), render standalone layout
   if (isPublicRoute) {
     if (!user || pathname !== '/login') {
       return <div className="min-h-screen w-full">{children}</div>
