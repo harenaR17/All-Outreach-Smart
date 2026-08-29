@@ -125,28 +125,29 @@ export function InboxCard({ inbox }: InboxCardProps) {
 
   const isStatusActive = inbox.status === 'active' && isActive
   const isStatusError = inbox.status === 'error'
+  const sendsToday = inbox.sends_today || 0
+  const sendPercent = dailyLimit > 0 ? Math.min(100, Math.round((sendsToday / dailyLimit) * 100)) : 0
+  const isLimitReached = sendsToday >= dailyLimit
 
   return (
     <div
-      className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
-        isStatusError
-          ? 'bg-zinc-950 border-rose-500/30 shadow-lg shadow-rose-950/20'
-          : isStatusActive
+      className={`rounded-2xl border transition-all duration-200 overflow-hidden ${isStatusError
+        ? 'bg-zinc-950 border-rose-500/30 shadow-lg shadow-rose-950/20'
+        : isStatusActive
           ? 'bg-zinc-950/80 border-zinc-800 hover:border-zinc-700 shadow-md'
           : 'bg-zinc-950/40 border-zinc-800/60 opacity-85'
-      }`}
+        }`}
     >
       {/* Card Header & Controls */}
       <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80">
         <div className="flex items-start gap-3.5">
           <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
-              isStatusError
-                ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                : isStatusActive
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${isStatusError
+              ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+              : isStatusActive
                 ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
                 : 'bg-zinc-900 border-zinc-800 text-zinc-500'
-            }`}
+              }`}
           >
             <Mail className="w-5 h-5" />
           </div>
@@ -174,6 +175,21 @@ export function InboxCard({ inbox }: InboxCardProps) {
                   Paused
                 </span>
               )}
+
+
+              {/* Sends Today Quota Badge */}
+              <span
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold border ${isLimitReached
+                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                  : sendPercent >= 80
+                    ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                    : 'bg-zinc-900 text-zinc-300 border-zinc-800'
+                  }`}
+                title={`${sendsToday} emails sent today out of ${dailyLimit} limit (${sendPercent}%)`}
+              >
+                <Send className="w-2.5 h-2.5 text-indigo-400" />
+                <span>{sendsToday}/{dailyLimit} today</span>
+              </span>
             </div>
 
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-zinc-400 font-mono">
@@ -199,14 +215,12 @@ export function InboxCard({ inbox }: InboxCardProps) {
               aria-checked={isActive}
               onClick={handleToggleActive}
               disabled={isPending}
-              className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
-                isActive ? 'bg-indigo-600' : 'bg-zinc-800'
-              }`}
+              className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${isActive ? 'bg-indigo-600' : 'bg-zinc-800'
+                }`}
             >
               <div
-                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                  isActive ? 'translate-x-4' : 'translate-x-0'
-                }`}
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isActive ? 'translate-x-4' : 'translate-x-0'
+                  }`}
               />
             </button>
           </div>
@@ -262,7 +276,9 @@ export function InboxCard({ inbox }: InboxCardProps) {
               <Gauge className="w-3.5 h-3.5 text-indigo-400" />
               Daily Limit
             </span>
-            <span className="text-[10px] text-zinc-400">sends/day</span>
+            <span className="text-[10px] font-mono text-zinc-400">
+              {sendsToday}/{dailyLimit} sent
+            </span>
           </label>
           <div className="relative">
             <input
@@ -274,6 +290,17 @@ export function InboxCard({ inbox }: InboxCardProps) {
               onBlur={handleDailyLimitBlur}
               disabled={isPending}
               className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono font-semibold text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="w-full bg-zinc-950 border border-zinc-800/80 rounded-full h-1.5 overflow-hidden mt-1.5">
+            <div
+              className={`h-full rounded-full transition-all ${isLimitReached
+                ? 'bg-rose-500'
+                : sendPercent >= 80
+                  ? 'bg-amber-400'
+                  : 'bg-indigo-500'
+                }`}
+              style={{ width: `${sendPercent}%` }}
             />
           </div>
         </div>
@@ -329,11 +356,10 @@ export function InboxCard({ inbox }: InboxCardProps) {
       {/* Test Connection Live Result */}
       {testResult && (
         <div
-          className={`px-5 py-3 border-t text-xs flex items-center justify-between ${
-            testResult.success
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-              : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-          }`}
+          className={`px-5 py-3 border-t text-xs flex items-center justify-between ${testResult.success
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+            : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+            }`}
         >
           <div className="flex items-center gap-2">
             {testResult.success ? (

@@ -19,7 +19,8 @@ import {
   Check,
   Cloud,
   Building2,
-  Key
+  Key,
+  Send,
 } from 'lucide-react'
 
 interface InboxManagerProps {
@@ -38,11 +39,15 @@ export function InboxManager({ inboxes }: InboxManagerProps) {
 
   const activeInboxes = inboxes.filter((i) => i.status === 'active' && i.is_active)
   const totalDailyCapacity = activeInboxes.reduce((acc, curr) => acc + curr.daily_send_limit, 0)
+  const totalSendsToday = inboxes.reduce((acc, curr) => acc + (curr.sends_today || 0), 0)
+  const capacityUsedPercent =
+    totalDailyCapacity > 0 ? Math.min(100, Math.round((totalSendsToday / totalDailyCapacity) * 100)) : 0
+
   const avgSpacing = activeInboxes.length
     ? Math.round(
-        activeInboxes.reduce((acc, curr) => acc + curr.min_seconds_between_sends, 0) /
-          activeInboxes.length
-      )
+      activeInboxes.reduce((acc, curr) => acc + curr.min_seconds_between_sends, 0) /
+      activeInboxes.length
+    )
     : 180
 
   const handleCopyScope = (type: 'send' | 'readonly' | 'modify' | 'all') => {
@@ -82,11 +87,28 @@ export function InboxManager({ inboxes }: InboxManagerProps) {
 
         <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-1.5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Total Daily Capacity</span>
-            <Gauge className="w-4 h-4 text-cyan-400" />
+            <span>Daily Sends / Capacity</span>
+            <Send className="w-4 h-4 text-cyan-400" />
           </div>
-          <div className="text-2xl font-bold text-cyan-400">{totalDailyCapacity}</div>
-          <p className="text-[11px] text-zinc-400">Emails maximum per day</p>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-cyan-400">{totalSendsToday}</span>
+            <span className="text-xs text-zinc-400 font-mono">/ {totalDailyCapacity} max</span>
+          </div>
+          <div className="w-full bg-zinc-800/80 rounded-full h-1.5 mt-2 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${capacityUsedPercent >= 90
+                ? 'bg-rose-500'
+                : capacityUsedPercent >= 70
+                  ? 'bg-amber-400'
+                  : 'bg-cyan-400'
+                }`}
+              style={{ width: `${capacityUsedPercent}%` }}
+            />
+          </div>
+
+          <p className="text-[10px] text-zinc-500 pt-0.5">
+            {capacityUsedPercent}% of pooled daily quota used
+          </p>
         </div>
 
         <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-1.5">
@@ -130,11 +152,10 @@ export function InboxManager({ inboxes }: InboxManagerProps) {
             </div>
             <button
               onClick={() => handleCopyScope('all')}
-              className={`text-[11px] px-2.5 py-1 rounded-md transition-all font-medium flex items-center gap-1 cursor-pointer ${
-                copiedScope === 'all'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-              }`}
+              className={`text-[11px] px-2.5 py-1 rounded-md transition-all font-medium flex items-center gap-1 cursor-pointer ${copiedScope === 'all'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                }`}
             >
               {copiedScope === 'all' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               <span>{copiedScope === 'all' ? 'Copied All 3 Scopes!' : 'Copy Scopes for Admin Console'}</span>

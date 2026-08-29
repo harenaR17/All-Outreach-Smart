@@ -12,7 +12,7 @@ export async function getInboxes(): Promise<{
 }> {
   try {
     const supabase = supabaseAdmin()
-    const { data, error } = await supabase
+    const { data: inboxes, error } = await supabase
       .from('email_accounts')
       .select('*')
       .order('created_at', { ascending: false })
@@ -21,7 +21,31 @@ export async function getInboxes(): Promise<{
       return { success: false, error: error.message }
     }
 
-    return { success: true, data: (data as EmailAccount[]) || [] }
+    // Calculate today's sends per inbox (since UTC midnight)
+    const utcMidnight = new Date()
+    utcMidnight.setUTCHours(0, 0, 0, 0)
+
+    const { data: sendsTodayData } = await supabase
+      .from('sends')
+      .select('email_account_id')
+      .eq('status', 'sent')
+      .gte('sent_at', utcMidnight.toISOString())
+
+    const sendsCountByInbox: Record<string, number> = {}
+    if (sendsTodayData) {
+      for (const s of sendsTodayData) {
+        if (s.email_account_id) {
+          sendsCountByInbox[s.email_account_id] = (sendsCountByInbox[s.email_account_id] || 0) + 1
+        }
+      }
+    }
+
+    const enrichedInboxes: EmailAccount[] = ((inboxes as EmailAccount[]) || []).map((inbox) => ({
+      ...inbox,
+      sends_today: sendsCountByInbox[inbox.id] || 0,
+    }))
+
+    return { success: true, data: enrichedInboxes }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to fetch inboxes'
     return { success: false, error: message }

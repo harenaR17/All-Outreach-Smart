@@ -149,22 +149,28 @@ export default async function DashboardPage() {
           </div>
         </Link>
 
-        {/* Sending Inboxes */}
+        {/* Daily Send Volume & Inbox Capacity */}
         <Link
           href="/inboxes"
           className="group rounded-2xl bg-zinc-900/50 border border-zinc-800/80 hover:border-zinc-700/80 p-5 space-y-3 transition-all hover:bg-zinc-900/70"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-400">Sending Inboxes</span>
+            <span className="text-xs font-medium text-zinc-400">Daily Send Volume</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <Inbox className="w-4 h-4" />
+              <Send className="w-4 h-4" />
             </div>
           </div>
           <div className="space-y-1">
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-zinc-100">{activeInboxesCount} Connected</span>
+              <span className="text-2xl font-bold text-zinc-100">{stats.sendsToday}</span>
+              <span className="text-xs text-zinc-400 font-mono">/ {totalDailyCapacity} cap</span>
             </div>
-            <p className="text-[11px] text-zinc-500">{totalDailyCapacity} emails/day pooled capacity</p>
+            <div className="flex items-center justify-between text-[11px] text-zinc-500">
+              <span>{activeInboxesCount} active inboxes</span>
+              <span className="text-emerald-400 font-medium">
+                {totalDailyCapacity > 0 ? Math.round((stats.sendsToday / totalDailyCapacity) * 100) : 0}% used
+              </span>
+            </div>
           </div>
         </Link>
 
@@ -251,13 +257,12 @@ export default async function DashboardPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-zinc-100">{camp.name}</span>
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-medium border uppercase ${
-                            camp.status === 'active'
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                              : camp.status === 'paused'
+                          className={`px-2 py-0.5 rounded text-[10px] font-medium border uppercase ${camp.status === 'active'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : camp.status === 'paused'
                               ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                               : 'bg-zinc-800 text-zinc-300 border-zinc-700'
-                          }`}
+                            }`}
                         >
                           {camp.status}
                         </span>

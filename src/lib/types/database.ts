@@ -534,7 +534,9 @@ export type Campaign = Database["public"]["Tables"]["campaigns"]["Row"]
 export type CampaignInsert = Database["public"]["Tables"]["campaigns"]["Insert"]
 export type CampaignUpdate = Database["public"]["Tables"]["campaigns"]["Update"]
 
-export type EmailAccount = Database["public"]["Tables"]["email_accounts"]["Row"]
+export type EmailAccount = Database["public"]["Tables"]["email_accounts"]["Row"] & {
+  sends_today?: number
+}
 export type EmailAccountInsert = Database["public"]["Tables"]["email_accounts"]["Insert"]
 export type EmailAccountUpdate = Database["public"]["Tables"]["email_accounts"]["Update"]
 

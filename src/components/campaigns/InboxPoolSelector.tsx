@@ -46,13 +46,11 @@ export function InboxPoolSelector({ availableInboxes, selectedInboxIds, onChange
             return (
               <label
                 key={inbox.id}
-                className={`flex items-center gap-4 p-4 rounded-xl border transition-all cursor-pointer ${
-                  disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-zinc-700'
-                } ${
-                  isSelected
+                className={`flex items-center gap-4 p-4 rounded-xl border transition-all cursor-pointer ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-zinc-700'
+                  } ${isSelected
                     ? 'border-indigo-500/40 bg-indigo-500/5'
                     : 'border-zinc-800 bg-zinc-900/30'
-                }`}
+                  }`}
               >
                 <input
                   type="checkbox"
@@ -78,8 +76,10 @@ export function InboxPoolSelector({ availableInboxes, selectedInboxIds, onChange
                 {/* Read-only metrics */}
                 <div className="flex items-center gap-4 text-[11px] text-zinc-500 shrink-0">
                   <div className="text-center">
-                    <div className="text-zinc-200 font-medium">{inbox.daily_send_limit}</div>
-                    <div>limit/day</div>
+                    <div className="text-zinc-200 font-mono font-medium">
+                      {inbox.sends_today ?? 0} / {inbox.daily_send_limit}
+                    </div>
+                    <div>today / cap</div>
                   </div>
                   <div className="text-center">
                     <div className="text-zinc-200 font-medium">{Math.round(inbox.min_seconds_between_sends / 60)}m</div>
