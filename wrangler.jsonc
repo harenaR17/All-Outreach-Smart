@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "outreach-smart",
+  "name": "all-outreach-smart",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-08-26",
   "compatibility_flags": [
@@ -11,17 +11,8 @@
     "binding": "ASSETS"
   },
   "keep_vars": true,
-  "routes": [
-    {
-      "pattern": "outreach-dashboard.quantmcortx.xyz",
-      "custom_domain": true
-    }
-  ],
+  "routes": [],
   "observability": {
     "enabled": true
-  },
-  "vars": {
-    "NEXT_PUBLIC_SUPABASE_URL": "https://gikpmuvzqrehkigihkyo.supabase.co",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdpa3BtdXZ6cXJlaGtpZ2loa3lvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NzgwMzcsImV4cCI6MjEwMzM1NDAzN30.dLBj8uCosXeIiomC5rFQR3hxCDjmG8mmmTNMIX7IajI"
   }
 }
