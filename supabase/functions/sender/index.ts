@@ -33,6 +33,7 @@ interface Campaign {
 interface EmailAccount {
   id: string
   email_address: string
+  display_name?: string | null
   service_account_client_email: string
   service_account_private_key: string
   daily_send_limit: number
@@ -275,10 +276,10 @@ Deno.serve(async (req: Request) => {
         const effectiveSubjectTemplate = isFirstTouch
           ? rawSubjectTemplate
           : rawSubjectTemplate || (
-              step1SubjectTemplate.toLowerCase().startsWith('re:')
-                ? step1SubjectTemplate
-                : `Re: ${step1SubjectTemplate}`
-            )
+            step1SubjectTemplate.toLowerCase().startsWith('re:')
+              ? step1SubjectTemplate
+              : `Re: ${step1SubjectTemplate}`
+          )
 
         const variables = (lead.variables ?? {}) as Record<string, unknown>
         const { rendered: subject, missing: missingSubj } = renderTemplate(
@@ -327,8 +328,12 @@ Deno.serve(async (req: Request) => {
           // Generate a unique Message-ID for this send
           const localMessageId = `<${crypto.randomUUID()}@outreach-smart>`
 
+          const fromHeader = assignedInbox.display_name?.trim()
+            ? `${assignedInbox.display_name.trim()} <${assignedInbox.email_address}>`
+            : assignedInbox.email_address
+
           const rawEmail = buildRawEmail({
-            from: assignedInbox.email_address,
+            from: fromHeader,
             to: lead.email,
             subject,
             body,
@@ -402,7 +407,7 @@ Deno.serve(async (req: Request) => {
           const nextStepIdx = cl.current_step + 1
           const hasNextStep = nextStepIdx < campaignSteps.length
           const nextStep = hasNextStep ? campaignSteps[nextStepIdx] : null
-          
+
           let nextSendAt: string | null = null
           if (nextStep) {
             const baseDelayMs = nextStep.delay_days * 86_400 * 1_000
