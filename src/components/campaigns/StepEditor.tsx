@@ -66,6 +66,10 @@ export function StepEditor({ steps, onChange, disabled, availableTokens = [] }: 
       {steps.map((step, index) => {
         const isFirst = index === 0
         const isExpanded = expandedStep === index
+        const step1Subject = steps[0]?.subject_template?.trim() || ''
+        const defaultFollowupSubject = step1Subject
+          ? (step1Subject.toLowerCase().startsWith('re:') ? step1Subject : `Re: ${step1Subject}`)
+          : `Follow-up #${index}`
 
         return (
           <div key={index} className={`rounded-xl border transition-all ${isExpanded ? 'border-indigo-500/30 bg-zinc-900/60' : 'border-zinc-800 bg-zinc-900/30 hover:border-zinc-700'}`}>
@@ -84,7 +88,7 @@ export function StepEditor({ steps, onChange, disabled, availableTokens = [] }: 
                 <div className="flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
                   <span className="text-xs font-medium text-zinc-200 truncate">
-                    {step.subject_template || (isFirst ? 'First contact' : `Follow-up #${index}`)}
+                    {step.subject_template || (isFirst ? 'First contact' : defaultFollowupSubject)}
                   </span>
                 </div>
                 <div className="text-[10px] text-zinc-500 mt-0.5">
@@ -181,13 +185,26 @@ export function StepEditor({ steps, onChange, disabled, availableTokens = [] }: 
 
                 {/* Subject */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-zinc-300">Subject</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-zinc-300">Subject</label>
+                    {!isFirst && (
+                      <span className="text-[10px] text-zinc-500">
+                        Leave blank to thread ({step1Subject ? (step1Subject.toLowerCase().startsWith('re:') ? step1Subject : `Re: ${step1Subject}`) : 'Re: <Step 1>'})
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     value={step.subject_template}
                     onChange={(e) => updateStep(index, { subject_template: e.target.value })}
                     disabled={disabled}
-                    placeholder={isFirst ? 'e.g. Quick question for {{company}}' : 'e.g. Re: Quick question for {{company}}'}
+                    placeholder={
+                      isFirst
+                        ? 'e.g. Quick question for {{company}}'
+                        : step1Subject
+                          ? (step1Subject.toLowerCase().startsWith('re:') ? `${step1Subject} (Leave empty to thread)` : `Re: ${step1Subject} (Leave empty to thread)`)
+                          : 'Re: <Step 1 Subject> (Leave empty to thread)'
+                    }
                     className="w-full px-3.5 py-2.5 rounded-lg bg-zinc-800/60 border border-zinc-700 focus:border-indigo-500/70 focus:ring-2 focus:ring-indigo-500/20 text-xs text-zinc-100 placeholder-zinc-500 outline-none transition-all font-mono"
                   />
                 </div>

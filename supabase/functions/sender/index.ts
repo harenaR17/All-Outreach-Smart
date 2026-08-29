@@ -226,8 +226,20 @@ Deno.serve(async (req: Request) => {
         let assignedInbox: EmailAccount | null = null
 
         if (isFirstTouch) {
+          // Re-evaluate inboxes that are eligible right now (cooldown + daily limit)
+          const currentNow = new Date()
+          const currentlyEligible = eligibleInboxes.filter((inbox) =>
+            isInboxEligible(inbox, sendsToday, currentNow)
+          )
+
+          if (currentlyEligible.length === 0) {
+            // No inboxes ready right now; will retry on next cron run
+            results.skipped++
+            continue
+          }
+
           // Round-robin: eligible inbox with oldest/null last_new_lead_sent_at
-          const sorted = [...eligibleInboxes].sort((a, b) => {
+          const sorted = [...currentlyEligible].sort((a, b) => {
             if (!a.last_new_lead_sent_at) return -1
             if (!b.last_new_lead_sent_at) return 1
             return (
@@ -243,8 +255,8 @@ Deno.serve(async (req: Request) => {
             results.skipped++
             continue
           }
-          // Skip (retry next minute) if that specific inbox is not eligible right now
-          if (!isInboxEligible(sameInbox, sendsToday, now)) {
+          // Skip (retry next minute) if that specific inbox is in cooldown or hit limit right now
+          if (!isInboxEligible(sameInbox, sendsToday, new Date())) {
             results.skipped++
             continue
           }
@@ -257,9 +269,20 @@ Deno.serve(async (req: Request) => {
         }
 
         // 11. Render templates (plain text only)
+        // For follow-ups, if subject_template is empty, inherit from Step 1 with "Re: " prefix
+        const step1SubjectTemplate = campaignSteps[0]?.subject_template?.trim() ?? ''
+        const rawSubjectTemplate = step.subject_template?.trim() ?? ''
+        const effectiveSubjectTemplate = isFirstTouch
+          ? rawSubjectTemplate
+          : rawSubjectTemplate || (
+              step1SubjectTemplate.toLowerCase().startsWith('re:')
+                ? step1SubjectTemplate
+                : `Re: ${step1SubjectTemplate}`
+            )
+
         const variables = (lead.variables ?? {}) as Record<string, unknown>
         const { rendered: subject, missing: missingSubj } = renderTemplate(
-          step.subject_template,
+          effectiveSubjectTemplate,
           variables,
           lead.email,
         )
@@ -375,15 +398,18 @@ Deno.serve(async (req: Request) => {
             sent_at: new Date().toISOString(),
           })
 
-          // 16. Advance campaign_lead state
+          // 16. Advance campaign_lead state with randomized follow-up jitter
           const nextStepIdx = cl.current_step + 1
           const hasNextStep = nextStepIdx < campaignSteps.length
           const nextStep = hasNextStep ? campaignSteps[nextStepIdx] : null
-          const nextSendAt = nextStep
-            ? new Date(
-                Date.now() + nextStep.delay_days * 86_400 * 1_000,
-              ).toISOString()
-            : null
+          
+          let nextSendAt: string | null = null
+          if (nextStep) {
+            const baseDelayMs = nextStep.delay_days * 86_400 * 1_000
+            // Add 15 to 60 minutes of random jitter to avoid robotic timing and batch spikes
+            const jitterMs = (Math.floor(Math.random() * 46) + 15) * 60 * 1_000
+            nextSendAt = new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
+          }
 
           const clUpdate: Record<string, unknown> = {
             current_step: nextStepIdx,
@@ -401,14 +427,17 @@ Deno.serve(async (req: Request) => {
           await supabase.from('campaign_leads').update(clUpdate).eq('id', cl.id)
 
           // 17. Update inbox timestamps & cooldown
+          const nextAvailableAt = new Date(
+            Date.now() + assignedInbox.min_seconds_between_sends * 1_000,
+          ).toISOString()
+          const lastSentAt = new Date().toISOString()
+
           const inboxUpdate: Record<string, unknown> = {
-            last_sent_at: new Date().toISOString(),
-            next_available_at: new Date(
-              Date.now() + assignedInbox.min_seconds_between_sends * 1_000,
-            ).toISOString(),
+            last_sent_at: lastSentAt,
+            next_available_at: nextAvailableAt,
           }
           if (isFirstTouch) {
-            inboxUpdate.last_new_lead_sent_at = new Date().toISOString()
+            inboxUpdate.last_new_lead_sent_at = lastSentAt
           }
           await supabase
             .from('email_accounts')
@@ -416,21 +445,34 @@ Deno.serve(async (req: Request) => {
             .eq('id', assignedInbox.id)
 
           // 18. Update in-memory inbox state for the rest of this run
+          const todayCount = sendsToday.get(assignedInbox.id) ?? 0
+          const newCount = todayCount + 1
+          sendsToday.set(assignedInbox.id, newCount)
+
+          // Keep in-memory allInboxes updated
+          const inAll = allInboxes.find((i) => i.id === assignedInbox!.id)
+          if (inAll) {
+            inAll.next_available_at = nextAvailableAt
+            inAll.last_sent_at = lastSentAt
+            if (isFirstTouch) {
+              inAll.last_new_lead_sent_at = lastSentAt
+            }
+          }
+
+          // Update eligibleInboxes pool (remove if in cooldown or daily limit reached)
           const idxInEligible = eligibleInboxes.findIndex(
             (i) => i.id === assignedInbox!.id,
           )
           if (idxInEligible >= 0) {
-            const todayCount = sendsToday.get(assignedInbox.id) ?? 0
-            const newCount = todayCount + 1
-            sendsToday.set(assignedInbox.id, newCount)
-            eligibleInboxes[idxInEligible].next_available_at =
-              inboxUpdate.next_available_at as string
+            eligibleInboxes[idxInEligible].next_available_at = nextAvailableAt
+            eligibleInboxes[idxInEligible].last_sent_at = lastSentAt
             if (isFirstTouch) {
-              eligibleInboxes[idxInEligible].last_new_lead_sent_at =
-                inboxUpdate.last_new_lead_sent_at as string
+              eligibleInboxes[idxInEligible].last_new_lead_sent_at = lastSentAt
             }
-            // Remove from eligible pool once daily limit reached
-            if (newCount >= eligibleInboxes[idxInEligible].daily_send_limit) {
+            if (
+              newCount >= eligibleInboxes[idxInEligible].daily_send_limit ||
+              assignedInbox.min_seconds_between_sends > 0
+            ) {
               eligibleInboxes.splice(idxInEligible, 1)
             }
           }

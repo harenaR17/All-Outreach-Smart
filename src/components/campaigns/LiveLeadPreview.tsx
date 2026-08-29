@@ -25,18 +25,28 @@ export function LiveLeadPreview({ steps, leads }: Props) {
     const vars = selectedLead.variables as Record<string, string | number | boolean | null>
     const email = selectedLead.email
 
-    const subSeg = segmentTemplate(currentStep.subject_template, vars, email)
+    const step1Subject = steps[0]?.subject_template?.trim() || ''
+    const rawSub = currentStep.subject_template?.trim() || ''
+    const effectiveSubject = selectedStepIndex === 0
+      ? rawSub
+      : rawSub || (
+          step1Subject.toLowerCase().startsWith('re:')
+            ? step1Subject
+            : `Re: ${step1Subject}`
+        )
+
+    const subSeg = segmentTemplate(effectiveSubject, vars, email)
     const bodySeg = segmentTemplate(currentStep.body_template, vars, email)
 
     const missing = new Set<string>()
-    const all = extractTokens(currentStep.subject_template + '\n' + currentStep.body_template)
+    const all = extractTokens(effectiveSubject + '\n' + currentStep.body_template)
     for (const t of all) {
       if (t === 'email') continue
       if (vars[t] === undefined || vars[t] === null || vars[t] === '') missing.add(t)
     }
 
     return { subjectSegments: subSeg, bodySegments: bodySeg, missingTokens: Array.from(missing), allTokens: all }
-  }, [currentStep, selectedLead])
+  }, [currentStep, selectedLead, steps, selectedStepIndex])
 
   return (
     <div className="space-y-4">
