@@ -1,0 +1,377 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { supabaseAdmin } from '@/lib/supabase/server'
+import type { GeminiApiKey, TelegramRecipient, ApiKey } from '@/lib/types/database'
+import { sendTelegramNotification } from '@/lib/telegram/notify'
+import { hashKey, generateRawKey } from '@/lib/api-auth'
+
+// ─── Gemini API Keys ─────────────────────────────────────────────────────────
+
+export async function getGeminiKeys(): Promise<{
+  success: boolean
+  data?: GeminiApiKey[]
+  error?: string
+}> {
+  try {
+    const supabase = supabaseAdmin()
+    const { data, error } = await supabase
+      .from('gemini_api_keys')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) return { success: false, error: error.message }
+    return { success: true, data: (data as GeminiApiKey[]) || [] }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function addGeminiKey(input: {
+  label: string
+  apiKey: string
+}): Promise<{ success: boolean; modelUsed?: string; error?: string }> {
+  try {
+    const rawKey = input.apiKey.trim()
+    if (!rawKey) return { success: false, error: 'API key is required' }
+
+    // 1. Pre-flight verification with Gemini API (uses same model fallback as reply classifier)
+    const testRes = await testGeminiKey(rawKey)
+    if (!testRes.success) {
+      return {
+        success: false,
+        error: `Gemini API key verification failed: ${testRes.error || 'Invalid API Key'}`,
+      }
+    }
+
+    const supabase = supabaseAdmin()
+    const { error } = await supabase.from('gemini_api_keys').insert({
+      label: input.label.trim() || null,
+      api_key: rawKey,
+      is_active: true,
+    })
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    return { success: true, modelUsed: testRes.modelUsed }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function toggleGeminiKey(
+  id: string,
+  isActive: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = supabaseAdmin()
+    const { error } = await supabase
+      .from('gemini_api_keys')
+      .update({ is_active: isActive })
+      .eq('id', id)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function deleteGeminiKey(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = supabaseAdmin()
+    const { error } = await supabase.from('gemini_api_keys').delete().eq('id', id)
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+// Same fallback order as the reply-checker Edge Function in supabase/functions/_shared/gemini.ts
+const GEMINI_MODEL_FALLBACK_ORDER = [
+  'gemini-2.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-3.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.7-flash',
+]
+
+export async function testGeminiKey(apiKey: string): Promise<{
+  success: boolean
+  modelUsed?: string
+  error?: string
+}> {
+  const key = apiKey.trim()
+  if (!key) return { success: false, error: 'API key is required' }
+
+  const lastError: string[] = []
+
+  for (const model of GEMINI_MODEL_FALLBACK_ORDER) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: {
+            'x-goog-api-key': key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'Reply with OK.' }] }],
+          }),
+        }
+      )
+
+      // Rate-limited on this model — try the next one
+      if (res.status === 429) {
+        lastError.push(`${model}: rate-limited (429)`)
+        continue
+      }
+
+      if (!res.ok) {
+        const errText = await res.text()
+        lastError.push(`${model}: HTTP ${res.status}`)
+        // 400/403 on first model likely means invalid key — don't bother trying others
+        if (res.status === 400 || res.status === 403) {
+          return { success: false, error: `Gemini API returned ${res.status}: ${errText}` }
+        }
+        continue
+      }
+
+      // At least one model responded successfully — key is valid
+      return { success: true, modelUsed: model }
+    } catch (err) {
+      lastError.push(`${model}: ${err instanceof Error ? err.message : 'network error'}`)
+    }
+  }
+
+  return {
+    success: false,
+    error: `All Gemini models failed. Last errors: ${lastError.slice(-3).join(' | ')}`,
+  }
+}
+
+// ─── Telegram Recipients ────────────────────────────────────────────────────
+
+export async function getTelegramRecipients(): Promise<{
+  success: boolean
+  data?: TelegramRecipient[]
+  error?: string
+}> {
+  try {
+    const supabase = supabaseAdmin()
+    const { data, error } = await supabase
+      .from('telegram_notify_recipients')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (error) return { success: false, error: error.message }
+    return { success: true, data: (data as TelegramRecipient[]) || [] }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function addTelegramRecipient(input: {
+  label: string
+  botToken: string
+  chatId: string
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const token = input.botToken.trim()
+    const chat = input.chatId.trim()
+
+    if (!token) return { success: false, error: 'Bot Token is required (from @BotFather)' }
+    if (!chat) return { success: false, error: 'Chat ID is required' }
+
+    // 1. Send immediate welcome confirmation message to verify bot token + chat ID
+    const welcomeMessage = [
+      '🤖 Outreach Smart — Connection Confirmed',
+      '',
+      '✅ This Telegram chat has been successfully linked to Outreach Smart.',
+      'You will now receive real-time alerts here when leads reply or when outreach events occur.',
+      '',
+      `⏱️ Connected at: ${new Date().toUTCString()}`,
+    ].join('\n')
+    const testRes = await sendTelegramNotification(token, chat, welcomeMessage)
+
+    if (!testRes.success) {
+      return {
+        success: false,
+        error: `Telegram test message failed: ${testRes.error || 'Unable to send message'}. Please ensure you have opened the bot in Telegram and tapped Start (/start), and that your Chat ID is correct.`,
+      }
+    }
+
+    const supabase = supabaseAdmin()
+    const { error } = await supabase.from('telegram_notify_recipients').insert({
+      label: input.label.trim() || null,
+      bot_token: token,
+      chat_id: chat,
+      is_active: true,
+    })
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    revalidatePath('/campaigns')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function toggleTelegramRecipient(
+  id: string,
+  isActive: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = supabaseAdmin()
+    const { error } = await supabase
+      .from('telegram_notify_recipients')
+      .update({ is_active: isActive })
+      .eq('id', id)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    revalidatePath('/campaigns')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function deleteTelegramRecipient(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = supabaseAdmin()
+    const { error } = await supabase.from('telegram_notify_recipients').delete().eq('id', id)
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    revalidatePath('/campaigns')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function testTelegramNotification(
+  botToken: string,
+  chatId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const token = botToken.trim()
+    const chat = chatId.trim()
+
+    if (!token) return { success: false, error: 'Bot Token is required' }
+    if (!chat) return { success: false, error: 'Chat ID is required' }
+
+    const testMessage = [
+      '🤖 Outreach Smart — Test Alert',
+      '',
+      '✅ Your Telegram notification bot is connected and operational!',
+      '',
+      `⏱️ ${new Date().toUTCString()}`,
+    ].join('\n')
+    return await sendTelegramNotification(token, chat, testMessage)
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Failed to send Telegram test message' }
+  }
+}
+
+// ─── API Keys ────────────────────────────────────────────────────────────────
+
+export async function listApiKeys(): Promise<{
+  success: boolean
+  data?: Omit<ApiKey, 'key_hash'>[]
+  error?: string
+}> {
+  try {
+    const supabase = supabaseAdmin()
+    const { data, error } = await supabase
+      .from('api_keys')
+      .select('id, label, is_active, created_at, last_used_at')
+      .order('created_at', { ascending: false })
+
+    if (error) return { success: false, error: error.message }
+    return { success: true, data: (data as Omit<ApiKey, 'key_hash'>[]) || [] }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+/**
+ * Creates a new API key.
+ * Returns the raw key ONCE — it is never stored and cannot be recovered.
+ * The caller must display it immediately and instruct the user to copy it.
+ */
+export async function createApiKey(label: string): Promise<{
+  success: boolean
+  rawKey?: string
+  id?: string
+  error?: string
+}> {
+  try {
+    const rawKey = generateRawKey()
+    const keyHash = await hashKey(rawKey)
+
+    const supabase = supabaseAdmin()
+    const { data, error } = await supabase
+      .from('api_keys')
+      .insert({
+        label: label.trim() || null,
+        key_hash: keyHash,
+        is_active: true,
+      })
+      .select('id')
+      .single()
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    return { success: true, rawKey, id: data.id }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function toggleApiKey(
+  id: string,
+  isActive: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = supabaseAdmin()
+    const { error } = await supabase
+      .from('api_keys')
+      .update({ is_active: isActive })
+      .eq('id', id)
+
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function deleteApiKey(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = supabaseAdmin()
+    const { error } = await supabase.from('api_keys').delete().eq('id', id)
+    if (error) return { success: false, error: error.message }
+
+    revalidatePath('/settings')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "allowImportingTsExtensions": true,
+    "noImplicitAny": true,
+    "typeRoots": [],
+    "paths": {
+      "https://esm.sh/@supabase/supabase-js@2": ["../../../node_modules/@supabase/supabase-js/dist/index.d.mts"],
+      "https://esm.sh/@supabase/supabase-js@2/*": ["../../../node_modules/@supabase/supabase-js/dist/*"]
+    }
+  },
+  "files": [
+    "deno.d.ts"
+  ],
+  "include": [
+    "**/*.ts"
+  ],
+  "exclude": []
+}
+
