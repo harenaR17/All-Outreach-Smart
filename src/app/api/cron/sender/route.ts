@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/server'
 const tokenCache = new Map<string, { token: string; expiresAt: number }>()
 
 // ─── Hard cap per invocation to stay within execution limits ────────────────
-const MAX_SENDS_PER_RUN = 20
+const MAX_SENDS_PER_RUN = 1
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -396,7 +396,7 @@ async function handleSender(req: NextRequest) {
                 },
                 body: JSON.stringify({ addLabelIds: ['IMPORTANT', 'STARRED'] }),
               },
-            ).catch(() => {})
+            ).catch(() => { })
           }
 
           // 15. Persist send record
@@ -437,8 +437,9 @@ async function handleSender(req: NextRequest) {
           await supabase.from('campaign_leads').update(clUpdate as any).eq('id', cl.id)
 
           // 17. Update inbox timestamps & cooldown
+          const next_sent_jitterMs = (Math.floor(Math.random() * 5) + 3) * 60 * 1_000;
           const nextAvailableAt = new Date(
-            Date.now() + assignedInbox.min_seconds_between_sends * 1_000,
+            Date.now() + assignedInbox.min_seconds_between_sends * 1_000 + next_sent_jitterMs,
           ).toISOString()
           const lastSentAt = new Date().toISOString()
 

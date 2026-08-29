@@ -16,7 +16,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const tokenCache = new Map<string, { token: string; expiresAt: number }>()
 
 // ─── Hard cap per invocation to stay within edge function timeout ────────────
-const MAX_SENDS_PER_RUN = 20
+const MAX_SENDS_PER_RUN = 1
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -432,8 +432,9 @@ Deno.serve(async (req: Request) => {
           await supabase.from('campaign_leads').update(clUpdate).eq('id', cl.id)
 
           // 17. Update inbox timestamps & cooldown
+          const next_sent_jitterMs = (Math.floor(Math.random() * 5) + 3) * 60 * 1_000;
           const nextAvailableAt = new Date(
-            Date.now() + assignedInbox.min_seconds_between_sends * 1_000,
+            Date.now() + assignedInbox.min_seconds_between_sends * 1_000 + next_sent_jitterMs,
           ).toISOString()
           const lastSentAt = new Date().toISOString()
 
