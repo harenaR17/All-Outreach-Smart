@@ -51,7 +51,7 @@ on conflict (key) do nothing;
 -- ----------------------------------------------------------------------------
 -- Sender — every 1 minute
 -- Processes all due campaign_leads rows (next_send_at <= now()) up to the
--- MAX_SENDS_PER_RUN cap defined inside the Edge Function.
+-- MAX_SENDS_PER_RUN cap defined inside the worker route.
 -- ----------------------------------------------------------------------------
 select cron.schedule(
   'outreach-sender',          -- unique job name (used to update/delete later)
@@ -59,8 +59,10 @@ select cron.schedule(
   $$
   select
     net.http_post(
-      url     := (select value from cron_config.settings where key = 'supabase_url')
-                 || '/functions/v1/sender',
+      url     := coalesce(
+        (select value || '/api/cron/sender' from cron_config.settings where key = 'app_url'),
+        (select value || '/functions/v1/sender' from cron_config.settings where key = 'supabase_url')
+      ),
       headers := jsonb_build_object(
         'Content-Type',    'application/json',
         'x-cron-secret',   (select value from cron_config.settings where key = 'cron_secret')
@@ -82,8 +84,10 @@ select cron.schedule(
   $$
   select
     net.http_post(
-      url     := (select value from cron_config.settings where key = 'supabase_url')
-                 || '/functions/v1/reply-checker',
+      url     := coalesce(
+        (select value || '/api/cron/reply-checker' from cron_config.settings where key = 'app_url'),
+        (select value || '/functions/v1/reply-checker' from cron_config.settings where key = 'supabase_url')
+      ),
       headers := jsonb_build_object(
         'Content-Type',    'application/json',
         'x-cron-secret',   (select value from cron_config.settings where key = 'cron_secret')

@@ -1,0 +1,730 @@
+import { type NextRequest, NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase/server'
+
+// ─── Module-level JWT token cache ───────────────────────────────────────────
+const tokenCache = new Map<string, { token: string; expiresAt: number }>()
+
+// ─── Hard cap per invocation to stay within execution limits ────────────────
+const MAX_SENDS_PER_RUN = 20
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface Campaign {
+  id: string
+  name: string
+  status: string
+  timezone: string
+  working_days: number[]
+  working_hours_start: string
+  working_hours_end: string
+}
+
+interface EmailAccount {
+  id: string
+  email_address: string
+  display_name?: string | null
+  service_account_client_email: string
+  service_account_private_key: string
+  daily_send_limit: number
+  min_seconds_between_sends: number
+  next_available_at: string | null
+  last_sent_at: string | null
+  last_new_lead_sent_at: string | null
+  is_active: boolean
+  status: string
+}
+
+interface CampaignStep {
+  id: string
+  step_order: number
+  delay_days: number
+  subject_template: string
+  body_template: string
+}
+
+interface CampaignLead {
+  id: string
+  campaign_id: string
+  lead_id: string
+  email_account_id: string | null
+  current_step: number
+  thread_id: string | null
+  last_message_id: string | null
+  next_send_at: string | null
+  status: string
+  leads: {
+    id: string
+    email: string
+    variables: Record<string, unknown>
+    status: string
+  }
+}
+
+// ─── Verification Helper ─────────────────────────────────────────────────────
+
+async function verifyCronAuth(req: NextRequest, supabase: ReturnType<typeof supabaseAdmin>): Promise<boolean> {
+  const cronSecretEnv = process.env.CRON_SECRET?.trim()
+  const headerSecret =
+    req.headers.get('x-cron-secret')?.trim() ||
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() ||
+    req.nextUrl.searchParams.get('secret')?.trim()
+
+  if (cronSecretEnv && headerSecret === cronSecretEnv) {
+    return true
+  }
+
+  // Fallback check against cron_config.settings in DB
+  try {
+    const { data } = await (supabase as any)
+      .from('cron_config.settings')
+      .select('value')
+      .eq('key', 'cron_secret')
+      .maybeSingle()
+
+    const dbSecret = (data as { value?: string } | null)?.value?.trim()
+    if (dbSecret && headerSecret === dbSecret) {
+      return true
+    }
+  } catch {
+    // Database check failed or schema not present
+  }
+
+  // Allow if ping request explicitly in non-production or if no secret configured
+  if (!cronSecretEnv && !headerSecret) {
+    return true
+  }
+
+  return false
+}
+
+// ─── Main Handler ────────────────────────────────────────────────────────────
+
+async function handleSender(req: NextRequest) {
+  const supabase = supabaseAdmin()
+
+  // 1. Auth Guard
+  const isAuthorized = await verifyCronAuth(req, supabase)
+  if (!isAuthorized) {
+    return NextResponse.json({ error: 'Unauthorized: invalid or missing cron secret' }, { status: 401 })
+  }
+
+  // Quick health check ping
+  if (req.nextUrl.searchParams.get('ping') === 'true') {
+    return NextResponse.json({ status: 'ok', worker: 'sender', timestamp: new Date().toISOString() })
+  }
+
+  const results = {
+    sent: 0,
+    failed: 0,
+    skipped: 0,
+    errors: [] as string[],
+    timestamp: new Date().toISOString(),
+  }
+
+  try {
+    // 2. Fetch all active campaigns
+    const { data: campaigns, error: campErr } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('status', 'active')
+
+    if (campErr) throw campErr
+    if (!campaigns || campaigns.length === 0) {
+      return NextResponse.json({ status: 'ok', message: 'No active campaigns', ...results })
+    }
+
+    for (const campaign of campaigns as Campaign[]) {
+      if (results.sent + results.failed >= MAX_SENDS_PER_RUN) break
+
+      // 3. Working-window check (timezone-aware)
+      if (!isWithinWorkingWindow(campaign)) continue
+
+      // 4. Fetch campaign steps (ordered)
+      const { data: steps } = await supabase
+        .from('campaign_steps')
+        .select('*')
+        .eq('campaign_id', campaign.id)
+        .order('step_order', { ascending: true })
+
+      if (!steps || steps.length === 0) continue
+      const campaignSteps = steps as CampaignStep[]
+
+      // 5. Fetch due campaign leads
+      const remaining = MAX_SENDS_PER_RUN - results.sent - results.failed
+
+      const [pendingRes, activeRes] = await Promise.all([
+        supabase
+          .from('campaign_leads')
+          .select('*, leads!inner(*)')
+          .eq('campaign_id', campaign.id)
+          .eq('status', 'pending')
+          .eq('current_step', 0)
+          .is('next_send_at', null)
+          .limit(remaining),
+        supabase
+          .from('campaign_leads')
+          .select('*, leads!inner(*)')
+          .eq('campaign_id', campaign.id)
+          .eq('status', 'active')
+          .lte('next_send_at', new Date().toISOString())
+          .order('next_send_at', { ascending: true })
+          .limit(remaining),
+      ])
+
+      const dueCampaignLeads: CampaignLead[] = [
+        ...((pendingRes.data ?? []) as unknown as CampaignLead[]),
+        ...((activeRes.data ?? []) as unknown as CampaignLead[]),
+      ]
+
+      if (dueCampaignLeads.length === 0) continue
+
+      // 6. Fetch campaign's assigned inboxes
+      const { data: accountRows } = await supabase
+        .from('campaign_email_accounts')
+        .select('email_accounts(*)')
+        .eq('campaign_id', campaign.id)
+
+      const allInboxes: EmailAccount[] = (accountRows ?? [])
+        .map((r: { email_accounts: unknown }) => r.email_accounts as EmailAccount)
+        .filter(Boolean)
+
+      if (allInboxes.length === 0) continue
+
+      // 7. Count campaign-only sends since UTC midnight per inbox
+      const todayUtcStart = new Date()
+      todayUtcStart.setUTCHours(0, 0, 0, 0)
+
+      const { data: sendRows } = await supabase
+        .from('sends')
+        .select('email_account_id')
+        .eq('status', 'sent')
+        .gte('sent_at', todayUtcStart.toISOString())
+        .in('email_account_id', allInboxes.map((i) => i.id))
+
+      const sendsToday = new Map<string, number>()
+      for (const row of sendRows ?? []) {
+        const key = (row as { email_account_id: string }).email_account_id
+        sendsToday.set(key, (sendsToday.get(key) ?? 0) + 1)
+      }
+
+      // 8. Determine initially eligible inboxes
+      const now = new Date()
+      const eligibleInboxes: EmailAccount[] = allInboxes.filter((inbox) =>
+        isInboxEligible(inbox, sendsToday, now)
+      )
+
+      // 9. Process each due lead
+      for (const cl of dueCampaignLeads) {
+        if (results.sent + results.failed >= MAX_SENDS_PER_RUN) break
+
+        const lead = cl.leads
+
+        // Skip globally DNC / bounced leads
+        if (lead.status !== 'active') {
+          await supabase
+            .from('campaign_leads')
+            .update({ status: 'paused', next_send_at: null })
+            .eq('id', cl.id)
+          results.skipped++
+          continue
+        }
+
+        const isFirstTouch = cl.current_step === 0
+
+        // Guard: if current_step is beyond steps array, mark completed
+        if (cl.current_step >= campaignSteps.length) {
+          await supabase
+            .from('campaign_leads')
+            .update({ status: 'completed', next_send_at: null })
+            .eq('id', cl.id)
+          continue
+        }
+
+        const step = campaignSteps[cl.current_step]
+
+        // 10. Pick inbox
+        let assignedInbox: EmailAccount | null = null
+
+        if (isFirstTouch) {
+          const currentNow = new Date()
+          const currentlyEligible = eligibleInboxes.filter((inbox) =>
+            isInboxEligible(inbox, sendsToday, currentNow)
+          )
+
+          if (currentlyEligible.length === 0) {
+            results.skipped++
+            continue
+          }
+
+          // Round-robin: eligible inbox with oldest/null last_new_lead_sent_at
+          const sorted = [...currentlyEligible].sort((a, b) => {
+            if (!a.last_new_lead_sent_at) return -1
+            if (!b.last_new_lead_sent_at) return 1
+            return (
+              new Date(a.last_new_lead_sent_at).getTime() -
+              new Date(b.last_new_lead_sent_at).getTime()
+            )
+          })
+          assignedInbox = sorted[0] ?? null
+        } else {
+          // Follow-up: must use the same inbox that sent the first email
+          const sameInbox = allInboxes.find((i) => i.id === cl.email_account_id) ?? null
+          if (!sameInbox) {
+            results.skipped++
+            continue
+          }
+          if (!isInboxEligible(sameInbox, sendsToday, new Date())) {
+            results.skipped++
+            continue
+          }
+          assignedInbox = sameInbox
+        }
+
+        if (!assignedInbox) {
+          results.skipped++
+          continue
+        }
+
+        // 11. Render templates (plain text only)
+        const step1SubjectTemplate = campaignSteps[0]?.subject_template?.trim() ?? ''
+        const rawSubjectTemplate = step.subject_template?.trim() ?? ''
+        const effectiveSubjectTemplate = isFirstTouch
+          ? rawSubjectTemplate
+          : rawSubjectTemplate || (
+            step1SubjectTemplate.toLowerCase().startsWith('re:')
+              ? step1SubjectTemplate
+              : `Re: ${step1SubjectTemplate}`
+          )
+
+        const variables = (lead.variables ?? {}) as Record<string, unknown>
+        const { rendered: subject, missing: missingSubj } = renderTemplate(
+          effectiveSubjectTemplate,
+          variables,
+          lead.email,
+        )
+        const { rendered: body, missing: missingBody } = renderTemplate(
+          step.body_template,
+          variables,
+          lead.email,
+        )
+        const allMissing = [...new Set([...missingSubj, ...missingBody])]
+
+        if (allMissing.length > 0) {
+          await supabase.from('sends').insert({
+            campaign_lead_id: cl.id,
+            email_account_id: assignedInbox.id,
+            step_id: step.id,
+            status: 'failed',
+            error_message: `Missing template variables: ${allMissing.join(', ')}`,
+          })
+          results.failed++
+          continue
+        }
+
+        // 12. Get Gmail access token
+        let accessToken: string
+        try {
+          accessToken = await getAccessToken(
+            assignedInbox.service_account_client_email,
+            assignedInbox.service_account_private_key,
+            assignedInbox.email_address,
+          )
+        } catch (err) {
+          results.errors.push(
+            `JWT error for ${assignedInbox.email_address}: ${String(err)}`,
+          )
+          results.failed++
+          continue
+        }
+
+        // 13. Build and send email
+        try {
+          const localMessageId = `<${crypto.randomUUID()}@outreach-smart>`
+
+          const fromHeader = assignedInbox.display_name?.trim()
+            ? `${assignedInbox.display_name.trim()} <${assignedInbox.email_address}>`
+            : assignedInbox.email_address
+
+          const rawEmail = buildRawEmail({
+            from: fromHeader,
+            to: lead.email,
+            subject,
+            body,
+            messageId: localMessageId,
+            inReplyTo: isFirstTouch ? undefined : (cl.last_message_id ?? undefined),
+            references: isFirstTouch ? undefined : (cl.last_message_id ?? undefined),
+          })
+
+          const gmailPayload: Record<string, string> = { raw: rawEmail }
+          if (!isFirstTouch && cl.thread_id) {
+            gmailPayload.threadId = cl.thread_id
+          }
+
+          const sendRes = await fetch(
+            'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(gmailPayload),
+            },
+          )
+
+          if (!sendRes.ok) {
+            const errBody = await sendRes.text()
+            throw new Error(`Gmail API error ${sendRes.status}: ${errBody}`)
+          }
+
+          const sentMsg = (await sendRes.json()) as {
+            id: string
+            threadId: string
+          }
+          const gmailMessageId = sentMsg.id
+          const gmailThreadId = sentMsg.threadId
+
+          // 14. Apply IMPORTANT + STARRED labels on first-touch only
+          if (isFirstTouch) {
+            await fetch(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailMessageId}/modify`,
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ addLabelIds: ['IMPORTANT', 'STARRED'] }),
+              },
+            ).catch(() => {})
+          }
+
+          // 15. Persist send record
+          await supabase.from('sends').insert({
+            campaign_lead_id: cl.id,
+            email_account_id: assignedInbox.id,
+            step_id: step.id,
+            status: 'sent',
+            gmail_message_id: gmailMessageId,
+            gmail_thread_id: gmailThreadId,
+            sent_at: new Date().toISOString(),
+          })
+
+          // 16. Advance campaign_lead state with randomized follow-up jitter
+          const nextStepIdx = cl.current_step + 1
+          const hasNextStep = nextStepIdx < campaignSteps.length
+          const nextStep = hasNextStep ? campaignSteps[nextStepIdx] : null
+
+          let nextSendAt: string | null = null
+          if (nextStep) {
+            const baseDelayMs = nextStep.delay_days * 86_400 * 1_000
+            const jitterMs = (Math.floor(Math.random() * 46) + 15) * 60 * 1_000
+            nextSendAt = new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
+          }
+
+          const clUpdate: Record<string, any> = {
+            current_step: nextStepIdx,
+            last_message_id: localMessageId,
+            next_send_at: nextSendAt,
+            status: hasNextStep ? 'active' : 'completed',
+          }
+
+          if (isFirstTouch) {
+            clUpdate.email_account_id = assignedInbox.id
+            clUpdate.thread_id = gmailThreadId
+          }
+
+          await supabase.from('campaign_leads').update(clUpdate as any).eq('id', cl.id)
+
+          // 17. Update inbox timestamps & cooldown
+          const nextAvailableAt = new Date(
+            Date.now() + assignedInbox.min_seconds_between_sends * 1_000,
+          ).toISOString()
+          const lastSentAt = new Date().toISOString()
+
+          const inboxUpdate: Record<string, any> = {
+            last_sent_at: lastSentAt,
+            next_available_at: nextAvailableAt,
+          }
+          if (isFirstTouch) {
+            inboxUpdate.last_new_lead_sent_at = lastSentAt
+          }
+          await supabase
+            .from('email_accounts')
+            .update(inboxUpdate as any)
+            .eq('id', assignedInbox.id)
+
+          // 18. Update in-memory counters
+          const todayCount = sendsToday.get(assignedInbox.id) ?? 0
+          const newCount = todayCount + 1
+          sendsToday.set(assignedInbox.id, newCount)
+
+          const inAll = allInboxes.find((i) => i.id === assignedInbox!.id)
+          if (inAll) {
+            inAll.next_available_at = nextAvailableAt
+            inAll.last_sent_at = lastSentAt
+            if (isFirstTouch) {
+              inAll.last_new_lead_sent_at = lastSentAt
+            }
+          }
+
+          const idxInEligible = eligibleInboxes.findIndex(
+            (i) => i.id === assignedInbox!.id,
+          )
+          if (idxInEligible >= 0) {
+            eligibleInboxes[idxInEligible].next_available_at = nextAvailableAt
+            eligibleInboxes[idxInEligible].last_sent_at = lastSentAt
+            if (isFirstTouch) {
+              eligibleInboxes[idxInEligible].last_new_lead_sent_at = lastSentAt
+            }
+            if (
+              newCount >= eligibleInboxes[idxInEligible].daily_send_limit ||
+              assignedInbox.min_seconds_between_sends > 0
+            ) {
+              eligibleInboxes.splice(idxInEligible, 1)
+            }
+          }
+
+          results.sent++
+        } catch (err) {
+          const errMsg = `Send error for ${lead.email} (step ${step.step_order}): ${String(err)}`
+          results.errors.push(errMsg)
+
+          await supabase.from('sends').insert({
+            campaign_lead_id: cl.id,
+            email_account_id: assignedInbox.id,
+            step_id: step.id,
+            status: 'failed',
+            error_message: String(err),
+          })
+
+          results.failed++
+        }
+      }
+    }
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+
+  return NextResponse.json({ status: 'ok', ...results })
+}
+
+export async function POST(req: NextRequest) {
+  return handleSender(req)
+}
+
+export async function GET(req: NextRequest) {
+  return handleSender(req)
+}
+
+// ─── Working-window check ─────────────────────────────────────────────────────
+
+function isWithinWorkingWindow(campaign: Campaign): boolean {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: campaign.timezone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date())
+
+    const weekdayMap: Record<string, number> = {
+      Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7,
+    }
+
+    const weekday = parts.find((p) => p.type === 'weekday')?.value ?? 'Mon'
+    const hourStr = parts.find((p) => p.type === 'hour')?.value ?? '0'
+    const minuteStr = parts.find((p) => p.type === 'minute')?.value ?? '0'
+
+    const dayOfWeek = weekdayMap[weekday] ?? 1
+    if (!campaign.working_days.includes(dayOfWeek)) return false
+
+    const hour = parseInt(hourStr, 10) % 24
+    const minute = parseInt(minuteStr, 10)
+
+    const nowMins = hour * 60 + minute
+    const [startH, startM] = campaign.working_hours_start.split(':').map(Number)
+    const [endH, endM] = campaign.working_hours_end.split(':').map(Number)
+    const startMins = startH * 60 + startM
+    const endMins = endH * 60 + endM
+
+    return nowMins >= startMins && nowMins < endMins
+  } catch {
+    return false
+  }
+}
+
+// ─── Inbox eligibility check ─────────────────────────────────────────────────
+
+function isInboxEligible(
+  inbox: EmailAccount,
+  sendsToday: Map<string, number>,
+  now: Date,
+): boolean {
+  if (!inbox.is_active || inbox.status !== 'active') return false
+
+  const todayCount = sendsToday.get(inbox.id) ?? 0
+  if (todayCount >= inbox.daily_send_limit) return false
+
+  if (inbox.next_available_at && new Date(inbox.next_available_at) > now) {
+    return false
+  }
+
+  return true
+}
+
+// ─── Template renderer (plain-text only) ─────────────────────────────────────
+
+const TOKEN_REGEX = /\{\{(\w+)\}\}/g
+
+function renderTemplate(
+  template: string,
+  variables: Record<string, unknown>,
+  email: string,
+): { rendered: string; missing: string[] } {
+  const missing: string[] = []
+  const seen = new Set<string>()
+
+  const rendered = template.replace(TOKEN_REGEX, (_, token: string) => {
+    if (token === 'email') return email
+
+    const val = variables[token]
+    if (val !== undefined && val !== null && val !== '') return String(val)
+
+    if (!seen.has(token)) {
+      missing.push(token)
+      seen.add(token)
+    }
+    return `{{${token}}}`
+  })
+
+  return { rendered, missing }
+}
+
+// ─── RFC 2822 email builder ───────────────────────────────────────────────────
+
+function buildRawEmail(opts: {
+  from: string
+  to: string
+  subject: string
+  body: string
+  messageId: string
+  inReplyTo?: string
+  references?: string
+}): string {
+  const headers = [
+    `From: ${opts.from}`,
+    `To: ${opts.to}`,
+    `Subject: ${opts.subject}`,
+    `Message-ID: ${opts.messageId}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/plain; charset=utf-8`,
+    `Content-Transfer-Encoding: quoted-printable`,
+  ]
+
+  if (opts.inReplyTo) headers.push(`In-Reply-To: ${opts.inReplyTo}`)
+  if (opts.references) headers.push(`References: ${opts.references}`)
+
+  const raw = [...headers, '', opts.body].join('\r\n')
+
+  return Buffer.from(raw, 'utf-8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+// ─── Service Account JWT + token exchange ─────────────────────────────────────
+
+async function getAccessToken(
+  clientEmail: string,
+  privateKeyPem: string,
+  subjectEmail: string,
+): Promise<string> {
+  const cacheKey = `${clientEmail}::${subjectEmail}`
+  const cached = tokenCache.get(cacheKey)
+
+  if (cached && cached.expiresAt - 60_000 > Date.now()) {
+    return cached.token
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000)
+
+  const b64url = (obj: unknown): string =>
+    Buffer.from(JSON.stringify(obj))
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+
+  const jwtHeader = { alg: 'RS256', typ: 'JWT' }
+  const jwtPayload = {
+    iss: clientEmail,
+    sub: subjectEmail,
+    scope: [
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.modify',
+    ].join(' '),
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: nowSec,
+    exp: nowSec + 3600,
+  }
+
+  const signingInput = `${b64url(jwtHeader)}.${b64url(jwtPayload)}`
+
+  const normalised = privateKeyPem.trim().replace(/\\n/g, '\n')
+  const pemBody = normalised
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '')
+
+  const keyBytes = Buffer.from(pemBody, 'base64')
+
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    keyBytes,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+
+  const signatureBytes = await crypto.subtle.sign(
+    'RSASSA-PKCS1-v1_5',
+    cryptoKey,
+    new TextEncoder().encode(signingInput),
+  )
+
+  const sigB64 = Buffer.from(signatureBytes)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+
+  const jwt = `${signingInput}.${sigB64}`
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion: jwt,
+    }),
+  })
+
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text()
+    throw new Error(`Token exchange failed (${tokenRes.status}): ${errText}`)
+  }
+
+  const tokenData = (await tokenRes.json()) as { access_token: string; expires_in: number }
+  const token = tokenData.access_token
+
+  tokenCache.set(cacheKey, {
+    token,
+    expiresAt: Date.now() + (tokenData.expires_in ?? 3600) * 1_000,
+  })
+
+  return token
+}

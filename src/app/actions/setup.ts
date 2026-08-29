@@ -165,6 +165,7 @@ export async function runDatabaseMigrations(input: {
   cronSecret: string
   managementToken?: string
   dbConnectionString?: string
+  appUrl?: string
 }): Promise<{
   success: boolean
   completedSteps: string[]
@@ -176,8 +177,9 @@ export async function runDatabaseMigrations(input: {
   const managementToken = input.managementToken?.trim()
   const dbConn = input.dbConnectionString?.trim()
   const projectRef = cleanUrl.replace(/^https?:\/\//, '').split('.')[0] || ''
+  const appUrl = input.appUrl?.trim()
 
-  const steps = getSchemaSteps(cleanUrl, cronSecret)
+  const steps = getSchemaSteps(cleanUrl, cronSecret, appUrl)
   const completedSteps: string[] = []
 
   // Strategy A: Supabase Management API Query Endpoint (100% HTTPS - works on Cloudflare & Localhost)
@@ -419,19 +421,43 @@ export async function testIntegrations(input: {
 }
 
 /**
- * 6. Verify Edge Functions health.
+ * 6. Verify background cron workers health.
  */
 export async function verifyEdgeFunctions(input: {
   supabaseUrl: string
   cronSecret: string
+  appUrl?: string
 }): Promise<{
   sender: { reachable: boolean; status?: number; error?: string }
   replyChecker: { reachable: boolean; status?: number; error?: string }
 }> {
   const cleanUrl = input.supabaseUrl.trim().replace(/\/$/, '')
   const cronSecret = input.cronSecret.trim()
+  const appUrl = input.appUrl?.trim().replace(/\/$/, '')
 
   const checkFunc = async (name: string) => {
+    // 1. Check Next.js App API route first if appUrl is provided
+    if (appUrl) {
+      try {
+        const res = await fetch(`${appUrl}/api/cron/${name}?ping=true`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-cron-secret': cronSecret,
+          },
+        })
+        if (res.status === 200 || res.status === 401) {
+          return {
+            reachable: true,
+            status: res.status,
+          }
+        }
+      } catch {
+        // App URL route ping failed, fall through to check Supabase Edge Function
+      }
+    }
+
+    // 2. Fallback check for deployed Supabase Edge Function
     try {
       const res = await fetch(`${cleanUrl}/functions/v1/${name}`, {
         method: 'POST',

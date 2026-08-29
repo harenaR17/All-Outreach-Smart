@@ -12,7 +12,8 @@
  * Returns an ordered array of { label, sql } objects for the setup wizard
  * to execute sequentially, reporting progress per step.
  */
-export function getSchemaSteps(supabaseUrl: string, cronSecret: string): { label: string; sql: string }[] {
+export function getSchemaSteps(supabaseUrl: string, cronSecret: string, appUrl?: string): { label: string; sql: string }[] {
+  const cleanAppUrl = appUrl?.trim().replace(/\/$/, '') || ''
   return [
     // ──────────────────────────────────────────────────────────────────────
     // Step 1: Extensions
@@ -275,6 +276,7 @@ INSERT INTO cron_config.settings (key, value)
 VALUES
   ('supabase_url',  '${supabaseUrl}'),
   ('cron_secret',   '${cronSecret}')
+  ${cleanAppUrl ? `, ('app_url', '${cleanAppUrl}')` : ''}
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;`,
     },
 
@@ -290,8 +292,10 @@ SELECT cron.schedule(
   $$
   SELECT
     net.http_post(
-      url     := (SELECT value FROM cron_config.settings WHERE key = 'supabase_url')
-                 || '/functions/v1/sender',
+      url     := COALESCE(
+        (SELECT value || '/api/cron/sender' FROM cron_config.settings WHERE key = 'app_url'),
+        (SELECT value || '/functions/v1/sender' FROM cron_config.settings WHERE key = 'supabase_url')
+      ),
       headers := jsonb_build_object(
         'Content-Type',    'application/json',
         'x-cron-secret',   (SELECT value FROM cron_config.settings WHERE key = 'cron_secret')
@@ -314,8 +318,10 @@ SELECT cron.schedule(
   $$
   SELECT
     net.http_post(
-      url     := (SELECT value FROM cron_config.settings WHERE key = 'supabase_url')
-                 || '/functions/v1/reply-checker',
+      url     := COALESCE(
+        (SELECT value || '/api/cron/reply-checker' FROM cron_config.settings WHERE key = 'app_url'),
+        (SELECT value || '/functions/v1/reply-checker' FROM cron_config.settings WHERE key = 'supabase_url')
+      ),
       headers := jsonb_build_object(
         'Content-Type',    'application/json',
         'x-cron-secret',   (SELECT value FROM cron_config.settings WHERE key = 'cron_secret')

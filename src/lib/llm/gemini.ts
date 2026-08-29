@@ -88,12 +88,8 @@ export async function classifyReplyWithGemini(
               system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
               contents: [{ role: 'user', parts: [{ text: userText }] }],
               generationConfig: {
-                responseFormat: {
-                  text: {
-                    mimeType: 'application/json',
-                    schema: CLASSIFICATION_SCHEMA,
-                  },
-                },
+                responseMimeType: 'application/json',
+                responseJsonSchema: CLASSIFICATION_SCHEMA,
               },
             }),
           }
