@@ -72,11 +72,14 @@ export async function testSupabaseConnection(input: {
   supabaseUrl: string
   supabaseAnonKey: string
   supabaseServiceRoleKey: string
+  managementToken?: string
   dbConnectionString?: string
 }): Promise<{ success: boolean; error?: string }> {
   try {
     const cleanUrl = input.supabaseUrl.trim().replace(/\/$/, '')
     const cleanServiceKey = input.supabaseServiceRoleKey.trim()
+    const managementToken = input.managementToken?.trim()
+    const projectRef = cleanUrl.replace(/^https?:\/\//, '').split('.')[0] || ''
 
     if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
       return { success: false, error: 'Supabase URL must start with https:// or http://' }
@@ -84,13 +87,34 @@ export async function testSupabaseConnection(input: {
 
     const client = createDynamicServerClient(cleanUrl, cleanServiceKey)
 
-    // Ping auth service with service role client
+    // 1. Ping auth service with service role client
     const { error: authError } = await client.auth.admin.listUsers({ page: 1, perPage: 1 })
     if (authError) {
       return { success: false, error: `Authentication failed: ${authError.message}` }
     }
 
-    // If direct database connection string provided, test direct postgres connection
+    // 2. If Management Token provided, verify against Supabase Management API
+    if (managementToken && projectRef) {
+      try {
+        const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}`, {
+          headers: { Authorization: `Bearer ${managementToken}` },
+        })
+        if (!res.ok) {
+          const errText = await res.text()
+          return {
+            success: false,
+            error: `Personal Access Token invalid (${res.status}): ${errText || res.statusText}`,
+          }
+        }
+      } catch (tokenErr: unknown) {
+        return {
+          success: false,
+          error: `Management API unreachable: ${tokenErr instanceof Error ? tokenErr.message : String(tokenErr)}`,
+        }
+      }
+    }
+
+    // 3. If direct database connection string provided, test direct postgres connection
     if (input.dbConnectionString?.trim()) {
       const connStr = input.dbConnectionString.trim()
       try {
@@ -120,14 +144,14 @@ export async function testSupabaseConnection(input: {
 }
 
 /**
- * 3. Run database migrations using direct Postgres connection or Supabase Management API.
+ * 3. Run database migrations using Supabase Management API (HTTPS) or direct Postgres connection.
  */
 export async function runDatabaseMigrations(input: {
   supabaseUrl: string
   supabaseServiceRoleKey: string
   cronSecret: string
-  dbConnectionString?: string
   managementToken?: string
+  dbConnectionString?: string
 }): Promise<{
   success: boolean
   completedSteps: string[]
@@ -136,14 +160,68 @@ export async function runDatabaseMigrations(input: {
 }> {
   const cleanUrl = input.supabaseUrl.trim().replace(/\/$/, '')
   const cronSecret = input.cronSecret.trim()
-  const dbConn = input.dbConnectionString?.trim()
   const managementToken = input.managementToken?.trim()
+  const dbConn = input.dbConnectionString?.trim()
   const projectRef = cleanUrl.replace(/^https?:\/\//, '').split('.')[0] || ''
 
   const steps = getSchemaSteps(cleanUrl, cronSecret)
   const completedSteps: string[] = []
 
-  // Strategy A: Direct PostgreSQL connection driver (recommended & universal)
+  // Strategy A: Supabase Management API Query Endpoint (100% HTTPS - works on Cloudflare & Localhost)
+  if (managementToken && projectRef) {
+    const endpoints = [
+      `https://api.supabase.com/v1/projects/${projectRef}/database/query`,
+      `https://api.supabase.com/v1/projects/${projectRef}/query`,
+    ]
+
+    for (const step of steps) {
+      let stepSuccess = false
+      let lastError = ''
+
+      for (const endpoint of endpoints) {
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${managementToken}`,
+            },
+            body: JSON.stringify({ query: step.sql }),
+          })
+
+          if (res.ok) {
+            completedSteps.push(step.label)
+            stepSuccess = true
+            break
+          } else {
+            const errText = await res.text()
+            lastError = `HTTP ${res.status}: ${errText}`
+            // Handle permission notice on extension creation gracefully
+            if (step.sql.includes('CREATE EXTENSION') && (res.status === 403 || errText.includes('permission'))) {
+              completedSteps.push(`${step.label} (skipped / manual toggle required)`)
+              stepSuccess = true
+              break
+            }
+          }
+        } catch (fetchErr: unknown) {
+          lastError = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        }
+      }
+
+      if (!stepSuccess) {
+        return {
+          success: false,
+          completedSteps,
+          failedStep: step.label,
+          error: lastError || 'Query execution failed',
+        }
+      }
+    }
+
+    return { success: true, completedSteps }
+  }
+
+  // Strategy B: Direct PostgreSQL connection driver (fallback for Node environments)
   if (dbConn) {
     let sqlClient: ReturnType<typeof postgres> | null = null
     try {
@@ -160,7 +238,6 @@ export async function runDatabaseMigrations(input: {
           completedSteps.push(step.label)
         } catch (err: unknown) {
           const errStr = err instanceof Error ? err.message : String(err)
-          // Handle extension permission warnings gracefully on managed cloud tiers
           if (step.sql.includes('CREATE EXTENSION') && (errStr.includes('permission') || errStr.includes('must be superuser') || errStr.includes('extension'))) {
             completedSteps.push(`${step.label} (skipped / manual toggle required)`)
             continue
@@ -187,54 +264,10 @@ export async function runDatabaseMigrations(input: {
     }
   }
 
-  // Strategy B: Supabase Management API Query Endpoint (https://api.supabase.com/v1/projects/{ref}/database/query)
-  if (managementToken && projectRef) {
-    const queryEndpoint = `https://api.supabase.com/v1/projects/${projectRef}/database/query`
-
-    for (const step of steps) {
-      try {
-        const res = await fetch(queryEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${managementToken}`,
-          },
-          body: JSON.stringify({ query: step.sql }),
-        })
-
-        if (!res.ok) {
-          const errText = await res.text()
-          if (step.sql.includes('CREATE EXTENSION')) {
-            completedSteps.push(`${step.label} (skipped / manual toggle required)`)
-            continue
-          }
-          return {
-            success: false,
-            completedSteps,
-            failedStep: step.label,
-            error: `API error (${res.status}): ${errText}`,
-          }
-        }
-
-        completedSteps.push(step.label)
-      } catch (err: unknown) {
-        return {
-          success: false,
-          completedSteps,
-          failedStep: step.label,
-          error: err instanceof Error ? err.message : 'Management API query failed',
-        }
-      }
-    }
-
-    return { success: true, completedSteps }
-  }
-
-  // If neither direct connection string nor management token provided
   return {
     success: false,
     completedSteps: [],
-    error: 'Please provide either the Database Connection String (from Supabase Database Settings) or a Supabase Management Access Token to execute SQL migrations.',
+    error: 'Please provide a Supabase Personal Access Token (sbp_...) or Database Connection String to execute migrations.',
   }
 }
 

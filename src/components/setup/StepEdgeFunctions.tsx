@@ -23,6 +23,7 @@ interface StepEdgeFunctionsProps {
     supabaseUrl: string
     supabaseAnonKey: string
     supabaseServiceRoleKey: string
+    managementToken?: string
     cronSecret: string
     geminiApiKey: string
     telegramBotToken: string
@@ -33,7 +34,7 @@ interface StepEdgeFunctionsProps {
 
 export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) {
   const router = useRouter()
-  const [managementToken, setManagementToken] = useState('')
+  const [managementToken, setManagementToken] = useState(formData.managementToken || '')
   const [injectingSecrets, setInjectingSecrets] = useState(false)
   const [secretsSuccess, setSecretsSuccess] = useState<boolean | null>(null)
   const [secretsError, setSecretsError] = useState<string | null>(null)
