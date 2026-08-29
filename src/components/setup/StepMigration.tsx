@@ -9,6 +9,7 @@ interface StepMigrationProps {
     supabaseUrl: string
     supabaseServiceRoleKey: string
     cronSecret: string
+    dbConnectionString?: string
   }
   onNext: () => void
   onBack: () => void
@@ -48,6 +49,7 @@ export function StepMigration({ formData, onNext, onBack }: StepMigrationProps) 
         supabaseUrl: formData.supabaseUrl,
         supabaseServiceRoleKey: formData.supabaseServiceRoleKey,
         cronSecret: formData.cronSecret,
+        dbConnectionString: formData.dbConnectionString,
       })
 
       if (res.completedSteps) {

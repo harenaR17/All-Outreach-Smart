@@ -27,6 +27,7 @@ export default function SetupPage() {
     supabaseUrl: '',
     supabaseAnonKey: '',
     supabaseServiceRoleKey: '',
+    dbConnectionString: '',
     cronSecret: '',
     adminEmail: '',
     adminPassword: '',
