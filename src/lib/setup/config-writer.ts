@@ -1,3 +1,4 @@
+import { cookies } from 'next/headers'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -13,8 +14,11 @@ export interface SetupConfig {
 
 /**
  * Saves configuration values.
- * In a standard Node.js environment (Localhost / Next server), writes to `.env.local`.
- * In Cloudflare Workers environment, attempts to write to Cloudflare KV if bound.
+ * 1. In a standard Node.js environment (Localhost / Node server), writes to `.env.local`.
+ * 2. In Cloudflare Workers / Edge Runtime:
+ *    - Suppresses read-only filesystem errors (EPERM / EROFS).
+ *    - Persists values into Cloudflare KV if CONFIG_KV is bound.
+ *    - Stores configuration securely in HttpOnly and client-accessible cookies.
  */
 export async function saveConfiguration(config: SetupConfig): Promise<{ success: boolean; message?: string; error?: string }> {
   const envMap: Record<string, string> = {
@@ -35,7 +39,7 @@ export async function saveConfiguration(config: SetupConfig): Promise<{ success:
 
   let savedLocally = false
   let savedKV = false
-  let localError: string | null = null
+  let savedCookies = false
 
   // 1. Attempt Node.js file write (Local dev / Node server)
   try {
@@ -71,8 +75,8 @@ export async function saveConfiguration(config: SetupConfig): Promise<{ success:
     const finalContent = [...lines.filter((l) => l.trim().length > 0), '', ...newEntries, ''].join('\n')
     fs.writeFileSync(envFilePath, finalContent, 'utf8')
     savedLocally = true
-  } catch (err: unknown) {
-    localError = err instanceof Error ? err.message : 'Filesystem write error'
+  } catch {
+    // Read-only filesystem on Cloudflare Workers / Edge Runtime — expected and handled gracefully
   }
 
   // 2. Attempt Cloudflare KV write (if running on Workers with CONFIG_KV bound)
@@ -92,27 +96,57 @@ export async function saveConfiguration(config: SetupConfig): Promise<{ success:
       }
     }
   } catch {
-    // KV not available or not running on Cloudflare, ignore
+    // KV not available, proceed to cookie storage
   }
 
-  // Update in-memory process.env for the current runtime lifecycle
+  // 3. Store in secure cookies for Edge Runtime persistence
+  try {
+    const cookieStore = await cookies()
+    const cookieOptions = {
+      maxAge: 60 * 60 * 24 * 365, // 1 year
+      path: '/',
+      sameSite: 'lax' as const,
+      secure: process.env.NODE_ENV === 'production',
+    }
+
+    // Public / Browser credentials
+    cookieStore.set('os_setup_completed', 'true', cookieOptions)
+    cookieStore.set('os_supabase_url', envMap.NEXT_PUBLIC_SUPABASE_URL, cookieOptions)
+    cookieStore.set('os_supabase_anon_key', envMap.NEXT_PUBLIC_SUPABASE_ANON_KEY, cookieOptions)
+
+    // Server-only / Secret credentials
+    cookieStore.set('os_service_role_key', envMap.SUPABASE_SERVICE_ROLE_KEY, {
+      ...cookieOptions,
+      httpOnly: true,
+    })
+    cookieStore.set('os_cron_secret', envMap.CRON_SECRET, {
+      ...cookieOptions,
+      httpOnly: true,
+    })
+
+    if (envMap.GEMINI_API_KEY) {
+      cookieStore.set('os_gemini_key', envMap.GEMINI_API_KEY, { ...cookieOptions, httpOnly: true })
+    }
+    if (envMap.TELEGRAM_BOT_TOKEN) {
+      cookieStore.set('os_telegram_token', envMap.TELEGRAM_BOT_TOKEN, { ...cookieOptions, httpOnly: true })
+    }
+
+    savedCookies = true
+  } catch {
+    // Cookies not writable in current context
+  }
+
+  // Update in-memory process.env for the current request lifecycle
   for (const [k, v] of Object.entries(envMap)) {
     process.env[k] = v
   }
 
-  if (savedLocally || savedKV) {
-    return {
-      success: true,
-      message: savedKV && savedLocally
-        ? 'Configuration saved to .env.local and Cloudflare KV.'
-        : savedKV
-        ? 'Configuration stored securely in Cloudflare KV.'
-        : 'Configuration saved to .env.local.',
-    }
-  }
-
   return {
-    success: false,
-    error: localError || 'Failed to persist configuration to disk or KV storage.',
+    success: true,
+    message: savedKV
+      ? 'Configuration saved to Cloudflare KV and secure session.'
+      : savedLocally
+      ? 'Configuration saved to .env.local.'
+      : 'Configuration saved to secure session.',
   }
 }

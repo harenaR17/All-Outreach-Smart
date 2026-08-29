@@ -17,11 +17,24 @@ export interface SetupStatus {
  * 1. Inspect setup state and database readiness.
  */
 export async function getSetupStatus(): Promise<SetupStatus> {
-  const configured = isSupabaseConfigured()
-  const completed = isSetupCompleted()
+  let configured = isSupabaseConfigured()
+  let completed = isSetupCompleted()
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  let serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !serviceKey || !completed) {
+    try {
+      const { cookies } = await import('next/headers')
+      const cookieStore = await cookies()
+      url = url || cookieStore.get('os_supabase_url')?.value
+      serviceKey = serviceKey || cookieStore.get('os_service_role_key')?.value
+      completed = completed || cookieStore.get('os_setup_completed')?.value === 'true'
+      if (url && serviceKey) configured = true
+    } catch {
+      // Cookies not accessible
+    }
+  }
 
   if (!url || !serviceKey) {
     return {

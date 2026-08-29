@@ -1,6 +1,30 @@
 import 'server-only'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/types/database'
+import { cookies } from 'next/headers'
+
+async function getStoredServerCredentials(): Promise<{
+  url?: string
+  serviceRoleKey?: string
+  isCompleted?: boolean
+}> {
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  let serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  let isCompleted = process.env.SETUP_COMPLETED === 'true'
+
+  if (!url || !serviceRoleKey || !isCompleted) {
+    try {
+      const cookieStore = await cookies()
+      url = url || cookieStore.get('os_supabase_url')?.value
+      serviceRoleKey = serviceRoleKey || cookieStore.get('os_service_role_key')?.value
+      isCompleted = isCompleted || cookieStore.get('os_setup_completed')?.value === 'true'
+    } catch {
+      // Cookies not accessible in current context
+    }
+  }
+
+  return { url, serviceRoleKey, isCompleted }
+}
 
 /**
  * Returns true if the server-side Supabase environment variables are present.
