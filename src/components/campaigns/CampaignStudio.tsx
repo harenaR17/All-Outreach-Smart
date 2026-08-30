@@ -24,24 +24,26 @@ const TIMEZONES = [
   'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney',
 ]
 
-type Tab = 'sequence' | 'leads' | 'inboxes' | 'schedule'
+type Tab = 'leads' | 'sequence' | 'inboxes' | 'schedule'
 
 interface Props {
   campaign: CampaignDetail
   allInboxes: EmailAccount[]
-  sampleLeads: Pick<Lead, 'id' | 'email' | 'variables'>[]
+  sampleLeads?: Pick<Lead, 'id' | 'email' | 'variables'>[]
   campaignLeads?: CampaignLeadItem[]
   allTelegramRecipients?: TelegramRecipient[]
+  allCampaigns?: Campaign[]
 }
 
 export function CampaignStudio({
   campaign,
   allInboxes,
-  sampleLeads,
+  sampleLeads = [],
   campaignLeads = [],
   allTelegramRecipients = [],
+  allCampaigns = [],
 }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('sequence')
+  const [activeTab, setActiveTab] = useState<Tab>('leads')
   const [currentStatus, setCurrentStatus] = useState<Campaign['status']>(campaign.status)
 
   // Form state
@@ -115,18 +117,18 @@ export function CampaignStudio({
     recipientIds: selectedRecipientIds,
   }), [name, timezone, workingDays, hoursStart, hoursEnd, stopOnAutoReply, steps, selectedInboxIds, selectedRecipientIds])
 
-  // Extract available tokens from steps for the inserter
+  // Extract available tokens from campaign leads for the inserter
   const availableTokens = Array.from(
     new Set(
-      sampleLeads.flatMap((l) =>
-        Object.keys(l.variables as Record<string, unknown>)
+      campaignLeads.flatMap((l) =>
+        Object.keys((l.variables || {}) as Record<string, unknown>)
       )
     )
   )
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'sequence', label: 'Sequence', icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'leads',    label: `Leads (${campaignLeads.length || campaign.leadCount})`, icon: <Users className="w-3.5 h-3.5" /> },
+    { id: 'sequence', label: 'Sequence', icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'inboxes',  label: `Inboxes (${selectedInboxIds.length})`, icon: <Inbox className="w-3.5 h-3.5" /> },
     { id: 'schedule', label: 'Schedule', icon: <Settings className="w-3.5 h-3.5" /> },
   ]
@@ -174,6 +176,17 @@ export function CampaignStudio({
       </div>
 
       {/* Tab Panels */}
+      {activeTab === 'leads' && (
+        <div className="space-y-3">
+          <CampaignLeadsTab
+            leads={campaignLeads}
+            totalSteps={steps.length}
+            campaignId={campaign.id}
+            campaigns={allCampaigns.length > 0 ? allCampaigns : [campaign]}
+          />
+        </div>
+      )}
+
       {activeTab === 'sequence' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-3">
@@ -194,18 +207,8 @@ export function CampaignStudio({
             />
           </div>
           <div className="space-y-3">
-            <LiveLeadPreview steps={steps} leads={sampleLeads} />
+            <LiveLeadPreview steps={steps} leads={campaignLeads} />
           </div>
-        </div>
-      )}
-
-      {activeTab === 'leads' && (
-        <div className="space-y-3">
-          <h3 className="text-xs font-semibold text-zinc-300 flex items-center gap-2">
-            <Users className="w-3.5 h-3.5 text-indigo-400" />
-            Campaign Leads Progress & Delivery Status
-          </h3>
-          <CampaignLeadsTab leads={campaignLeads} totalSteps={steps.length} />
         </div>
       )}
 

@@ -149,8 +149,10 @@ async function handleSender(req: NextRequest) {
       if (!steps || steps.length === 0) continue
       const campaignSteps = steps as CampaignStep[]
 
-      // 5. Fetch due campaign leads
-      const remaining = MAX_SENDS_PER_RUN - results.sent - results.failed
+      // 5. Fetch due campaign leads (buffer of up to 30 candidates to evaluate)
+      //    a) Pending leads (never contacted, current_step=0, status='pending')
+      //    b) Active leads with next_send_at <= now (follow-ups)
+      const remaining = 30
 
       const [pendingRes, activeRes] = await Promise.all([
         supabase

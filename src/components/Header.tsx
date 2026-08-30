@@ -18,10 +18,10 @@ export function Header() {
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
-          <span className="text-xs font-medium text-zinc-300">Phase 0 Active</span>
+          <span className="text-xs font-medium text-zinc-300">Outreach Operation Activated</span>
         </div>
         <span className="text-zinc-700">•</span>
-        <span className="text-xs text-zinc-400">Single-Operator Cold Outreach System</span>
+        <span className="text-xs text-zinc-400">Outreach Management System</span>
       </div>
 
       <div className="flex items-center gap-3">

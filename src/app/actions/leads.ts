@@ -144,6 +144,9 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
       }
     }
 
+    if (campaignId) {
+      revalidatePath(`/campaigns/${campaignId}`)
+    }
     revalidatePath('/leads')
     revalidatePath('/campaigns')
     revalidatePath('/')
@@ -409,6 +412,9 @@ export async function createSingleLead(input: {
       )
     }
 
+    if (input.campaignId) {
+      revalidatePath(`/campaigns/${input.campaignId}`)
+    }
     revalidatePath('/leads')
     revalidatePath('/campaigns')
     revalidatePath('/')
@@ -533,6 +539,7 @@ export async function assignLeadsToCampaign(
 
     if (upsertErr) return { success: false, error: upsertErr.message }
 
+    revalidatePath(`/campaigns/${campaignId}`)
     revalidatePath('/leads')
     revalidatePath('/campaigns')
     revalidatePath('/')

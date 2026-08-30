@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useTransition } from 'react'
+import { useState, useRef, useTransition, useEffect } from 'react'
 import type { Campaign } from '@/lib/types/database'
 import {
   X,
@@ -25,6 +25,8 @@ interface ImportLeadsModalProps {
   isOpen: boolean
   onClose: () => void
   campaigns: Campaign[]
+  defaultCampaignId?: string
+  onImportComplete?: (summary: ImportSummary) => void
 }
 
 type ImportMode = 'file' | 'drive'
@@ -33,6 +35,8 @@ export function ImportLeadsModal({
   isOpen,
   onClose,
   campaigns,
+  defaultCampaignId,
+  onImportComplete,
 }: ImportLeadsModalProps) {
   const [isPending, startTransition] = useTransition()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -52,9 +56,15 @@ export function ImportLeadsModal({
   // Shared parsing / import state
   const [isParsing, setIsParsing] = useState(false)
   const [parseResult, setParseResult] = useState<ParseResult | null>(null)
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('')
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(defaultCampaignId || '')
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedCampaignId(defaultCampaignId || '')
+    }
+  }, [isOpen, defaultCampaignId])
 
   if (!isOpen) return null
 
@@ -123,6 +133,7 @@ export function ImportLeadsModal({
       })
       if (res.success) {
         setImportSummary(res)
+        onImportComplete?.(res)
       } else {
         setErrorMsg(res.error || 'Import failed')
       }
@@ -137,7 +148,7 @@ export function ImportLeadsModal({
     setErrorMsg(null)
     setDriveFetchError(null)
     setDriveFetchHint(null)
-    setSelectedCampaignId('')
+    setSelectedCampaignId(defaultCampaignId || '')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 

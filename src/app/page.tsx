@@ -118,7 +118,7 @@ export default async function DashboardPage() {
             </Link>
             <Link
               href="/activity"
-              className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 transition-all border border-zinc-700/80 flex items-center gap-2 cursor-pointer"
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-medium text-zinc-200 transition-all border border-zinc-700/80 flex items-center gap-2 cursor-pointer"
             >
               <Activity className="w-3.5 h-3.5" />
               <span>Live Activity Logs</span>

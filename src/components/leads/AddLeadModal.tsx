@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import {
   X,
   UserPlus,
@@ -25,6 +25,7 @@ interface AddLeadModalProps {
   isOpen: boolean
   onClose: () => void
   campaigns: Campaign[]
+  defaultCampaignId?: string
   onLeadCreated?: (lead: Lead) => void
 }
 
@@ -37,6 +38,7 @@ export function AddLeadModal({
   isOpen,
   onClose,
   campaigns,
+  defaultCampaignId,
   onLeadCreated,
 }: AddLeadModalProps) {
   const [isPending, startTransition] = useTransition()
@@ -48,12 +50,18 @@ export function AddLeadModal({
   const [company, setCompany] = useState('')
   const [title, setTitle] = useState('')
   const [website, setWebsite] = useState('')
-  const [selectedCampaignId, setSelectedCampaignId] = useState('')
+  const [selectedCampaignId, setSelectedCampaignId] = useState(defaultCampaignId || '')
   const [status, setStatus] = useState<'active' | 'do_not_contact'>('active')
   const [customVars, setCustomVars] = useState<CustomVariable[]>([])
 
   // Feedback State
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedCampaignId(defaultCampaignId || '')
+    }
+  }, [isOpen, defaultCampaignId])
 
   if (!isOpen) return null
 
@@ -117,7 +125,7 @@ export function AddLeadModal({
           setCompany('')
           setTitle('')
           setWebsite('')
-          setSelectedCampaignId('')
+          setSelectedCampaignId(defaultCampaignId || '')
           setStatus('active')
           setCustomVars([])
           setFeedback(null)

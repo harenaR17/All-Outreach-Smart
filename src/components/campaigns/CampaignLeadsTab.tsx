@@ -1,8 +1,12 @@
 'use client'
 
 import { useState, useMemo, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { CampaignLeadItem, updateCampaignLeadState, removeLeadFromCampaign } from '@/app/actions/campaigns'
 import { formatDate } from '@/lib/utils'
+import { ImportLeadsModal } from '@/components/leads/ImportLeadsModal'
+import { AddLeadModal } from '@/components/leads/AddLeadModal'
+import type { Campaign } from '@/lib/types/database'
 import {
   Users,
   Search,
@@ -19,12 +23,18 @@ import {
   Play,
   UserMinus,
   ChevronDown,
-  Loader2
+  Loader2,
+  UploadCloud,
+  UserPlus,
+  FileSpreadsheet,
+  Plus
 } from 'lucide-react'
 
 interface Props {
   leads: CampaignLeadItem[]
   totalSteps: number
+  campaignId?: string
+  campaigns?: Campaign[]
 }
 
 const CATEGORY_BADGES: Record<string, { label: string; bg: string; text: string; border: string }> = {
@@ -60,11 +70,16 @@ const CATEGORY_BADGES: Record<string, { label: string; bg: string; text: string;
   },
 }
 
-export function CampaignLeadsTab({ leads, totalSteps }: Props) {
+export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = [] }: Props) {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isPending, startTransition] = useTransition()
   const [updatingLeadId, setUpdatingLeadId] = useState<string | null>(null)
+
+  // Modals
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+  const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false)
 
   const filteredLeads = useMemo(() => {
     return leads.filter((item) => {
@@ -86,20 +101,22 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
     startTransition(async () => {
       await updateCampaignLeadState(campaignLeadId, updates)
       setUpdatingLeadId(null)
+      router.refresh()
     })
   }
 
-  const handleRestart = (campaignLeadId: string, email: string, campaignId: string) => {
+  const handleRestart = (campaignLeadId: string, email: string, campId: string) => {
     if (!confirm(`Restart sequence from Step 1 for "${email}"?`)) return
-    handleStateUpdate(campaignLeadId, { restart: true, campaignId })
+    handleStateUpdate(campaignLeadId, { restart: true, campaignId: campId })
   }
 
-  const handleRemove = (campaignLeadId: string, email: string, campaignId: string) => {
+  const handleRemove = (campaignLeadId: string, email: string, campId: string) => {
     if (!confirm(`Remove "${email}" from this campaign? (Lead will remain in the global pool)`)) return
     setUpdatingLeadId(campaignLeadId)
     startTransition(async () => {
-      await removeLeadFromCampaign(campaignLeadId, campaignId)
+      await removeLeadFromCampaign(campaignLeadId, campId)
       setUpdatingLeadId(null)
+      router.refresh()
     })
   }
 
@@ -116,15 +133,49 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Top Header Toolbar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
+        <div>
+          <h3 className="text-xs font-semibold text-zinc-200 flex items-center gap-2">
+            <Users className="w-4 h-4 text-indigo-400" />
+            Campaign Leads Progress & Delivery Status
+          </h3>
+          <p className="text-[11px] text-zinc-400 mt-0.5">
+            {leads.length} {leads.length === 1 ? 'contact' : 'contacts'} enrolled in this sequence
+          </p>
+        </div>
+
+        {/* Lead Actions */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setIsAddLeadModalOpen(true)}
+            className="px-3 py-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/80 text-xs font-medium text-zinc-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+          >
+            <UserPlus className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Add Single Lead</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsImportModalOpen(true)}
+            className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-all shadow-md shadow-indigo-600/20 flex items-center gap-2 cursor-pointer shrink-0"
+          >
+            <UploadCloud className="w-3.5 h-3.5" />
+            <span>Import Leads</span>
+          </button>
+        </div>
+      </div>
+
       {/* Filters & Search Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/40 border border-zinc-800">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search leads by email or company..."
+            placeholder="Search leads by email, name or company..."
             className="w-full pl-9 pr-3 py-2 rounded-lg bg-zinc-950/80 border border-zinc-800 text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
@@ -133,7 +184,7 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           <button
             onClick={() => setStatusFilter('all')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               statusFilter === 'all'
                 ? 'bg-zinc-800 text-zinc-100'
                 : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -143,7 +194,7 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
           </button>
           <button
             onClick={() => setStatusFilter('active')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               statusFilter === 'active'
                 ? 'bg-indigo-600 text-white'
                 : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -153,7 +204,7 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
           </button>
           <button
             onClick={() => setStatusFilter('pending')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               statusFilter === 'pending'
                 ? 'bg-zinc-700 text-white'
                 : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -163,7 +214,7 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
           </button>
           <button
             onClick={() => setStatusFilter('replied')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               statusFilter === 'replied'
                 ? 'bg-emerald-600 text-white'
                 : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -173,7 +224,7 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
           </button>
           <button
             onClick={() => setStatusFilter('paused')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               statusFilter === 'paused'
                 ? 'bg-amber-600 text-white'
                 : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -183,7 +234,7 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
           </button>
           <button
             onClick={() => setStatusFilter('bounced')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               statusFilter === 'bounced'
                 ? 'bg-rose-600 text-white'
                 : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -193,7 +244,7 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
           </button>
           <button
             onClick={() => setStatusFilter('completed')}
-            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               statusFilter === 'completed'
                 ? 'bg-cyan-600 text-white'
                 : 'bg-zinc-800/80 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -404,16 +455,80 @@ export function CampaignLeadsTab({ leads, totalSteps }: Props) {
               </tbody>
             </table>
           </div>
+        ) : leads.length === 0 ? (
+          /* Empty State when no leads exist in campaign */
+          <div className="p-12 text-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto">
+              <UploadCloud className="w-6 h-6" />
+            </div>
+            <div className="space-y-1 max-w-sm mx-auto">
+              <p className="text-sm font-semibold text-zinc-200">No leads enrolled in this campaign yet</p>
+              <p className="text-xs text-zinc-400">
+                Import contacts from CSV, XLSX, or Google Sheets to automatically enroll them into this sequence.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setIsAddLeadModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-200 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Add Single Lead</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-all shadow-md shadow-indigo-600/20 flex items-center gap-2 cursor-pointer"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                <span>Upload Spreadsheet / Google Drive</span>
+              </button>
+            </div>
+          </div>
         ) : (
-          <div className="p-12 text-center space-y-2">
+          /* Empty State when filter or search does not match */
+          <div className="p-12 text-center space-y-3">
             <Users className="w-8 h-8 text-zinc-600 mx-auto" />
-            <p className="text-xs font-medium text-zinc-300">No leads match the filter</p>
-            <p className="text-[11px] text-zinc-500">
-              {search ? 'Try clearing your search query.' : 'Attach leads to this campaign to begin sequencing.'}
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-zinc-300">No leads match the filter</p>
+              <p className="text-[11px] text-zinc-500">
+                {search ? 'Try clearing your search query or reset status filters.' : 'No leads match the selected status.'}
+              </p>
+            </div>
+            {(search || statusFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('')
+                  setStatusFilter('all')
+                }}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
+              >
+                Reset Search &amp; Filters
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {/* Import Spreadsheet / Google Sheets Modal */}
+      <ImportLeadsModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        campaigns={campaigns}
+        defaultCampaignId={campaignId}
+        onImportComplete={() => router.refresh()}
+      />
+
+      {/* Add Single Lead Modal */}
+      <AddLeadModal
+        isOpen={isAddLeadModalOpen}
+        onClose={() => setIsAddLeadModalOpen(false)}
+        campaigns={campaigns}
+        defaultCampaignId={campaignId}
+        onLeadCreated={() => router.refresh()}
+      />
     </div>
   )
 }

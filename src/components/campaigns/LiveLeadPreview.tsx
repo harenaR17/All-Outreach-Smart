@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Eye, AlertTriangle, CheckCircle2, User, ChevronDown } from 'lucide-react'
 import type { SaveStepInput } from '@/app/actions/campaigns'
 import type { Lead } from '@/lib/types/database'
@@ -14,6 +14,16 @@ interface Props {
 export function LiveLeadPreview({ steps, leads }: Props) {
   const [selectedLeadId, setSelectedLeadId] = useState<string>(leads[0]?.id ?? '')
   const [selectedStepIndex, setSelectedStepIndex] = useState<number>(0)
+
+  useEffect(() => {
+    if (!selectedLeadId || !leads.some((l) => l.id === selectedLeadId)) {
+      if (leads.length > 0) {
+        setSelectedLeadId(leads[0].id)
+      } else {
+        setSelectedLeadId('')
+      }
+    }
+  }, [leads, selectedLeadId])
 
   const selectedLead = leads.find((l) => l.id === selectedLeadId)
   const currentStep = steps[selectedStepIndex]
@@ -78,7 +88,7 @@ export function LiveLeadPreview({ steps, leads }: Props) {
         </div>
       ) : (
         <p className="text-[11px] text-zinc-500 bg-zinc-900/40 border border-zinc-800 rounded-lg px-3 py-2">
-          Import leads first to enable live preview.
+          No leads enrolled in this campaign yet. Go to the <strong>Leads</strong> tab to import leads for sequence preview.
         </p>
       )}
 
