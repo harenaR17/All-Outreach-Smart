@@ -45,7 +45,8 @@ comment on table cron_config.settings is
 insert into cron_config.settings (key, value)
 values
   ('supabase_url',  'https://YOUR_PROJECT_REF.supabase.co'),
-  ('cron_secret',   'YOUR_CRON_SECRET')
+  ('cron_secret',   'YOUR_CRON_SECRET'),
+  ('app_url',       'https://YOUR_DOMAIN.com')
 on conflict (key) do nothing;
 
 -- ----------------------------------------------------------------------------
@@ -59,10 +60,7 @@ select cron.schedule(
   $$
   select
     net.http_post(
-      url     := coalesce(
-        (select value || '/api/cron/sender' from cron_config.settings where key = 'app_url'),
-        (select value || '/functions/v1/sender' from cron_config.settings where key = 'supabase_url')
-      ),
+      url     := (select value || '/api/cron/sender' from cron_config.settings where key = 'app_url'),
       headers := jsonb_build_object(
         'Content-Type',    'application/json',
         'x-cron-secret',   (select value from cron_config.settings where key = 'cron_secret')
@@ -84,10 +82,7 @@ select cron.schedule(
   $$
   select
     net.http_post(
-      url     := coalesce(
-        (select value || '/api/cron/reply-checker' from cron_config.settings where key = 'app_url'),
-        (select value || '/functions/v1/reply-checker' from cron_config.settings where key = 'supabase_url')
-      ),
+      url     := (select value || '/api/cron/reply-checker' from cron_config.settings where key = 'app_url'),
       headers := jsonb_build_object(
         'Content-Type',    'application/json',
         'x-cron-secret',   (select value from cron_config.settings where key = 'cron_secret')

@@ -177,7 +177,7 @@ export async function runDatabaseMigrations(input: {
   const managementToken = input.managementToken?.trim()
   const dbConn = input.dbConnectionString?.trim()
   const projectRef = cleanUrl.replace(/^https?:\/\//, '').split('.')[0] || ''
-  const appUrl = input.appUrl?.trim()
+  const appUrl = input.appUrl?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.APP_URL?.trim() || ''
 
   const steps = getSchemaSteps(cleanUrl, cronSecret, appUrl)
   const completedSteps: string[] = []
@@ -537,3 +537,150 @@ export async function saveSetupConfiguration(config: SetupConfig): Promise<{
 }> {
   return saveConfiguration(config)
 }
+
+/**
+ * 9. Inspect cron_config.settings directly from the Supabase database.
+ */
+export async function getDatabaseCronSettings(input: {
+  supabaseUrl: string
+  supabaseServiceRoleKey: string
+  managementToken?: string
+}): Promise<{
+  success: boolean
+  settings?: Record<string, string>
+  error?: string
+}> {
+  try {
+    const cleanUrl = input.supabaseUrl.trim().replace(/\/$/, '')
+    const cleanServiceKey = input.supabaseServiceRoleKey.trim()
+    const managementToken = input.managementToken?.trim()
+    const projectRef = cleanUrl.replace(/^https?:\/\//, '').split('.')[0] || ''
+
+    // 1. Try Management API if token provided
+    if (managementToken && projectRef) {
+      try {
+        const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/database/query`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${managementToken}`,
+          },
+          body: JSON.stringify({ query: 'SELECT key, value FROM cron_config.settings;' }),
+        })
+        if (res.ok) {
+          const rows = (await res.json()) as Array<{ key: string; value: string }>
+          const settings: Record<string, string> = {}
+          for (const row of rows) {
+            settings[row.key] = row.value
+          }
+          return { success: true, settings }
+        }
+      } catch {
+        // Fallback to client query
+      }
+    }
+
+    // 2. Fallback to Service Role REST client
+    const client = createDynamicServerClient(cleanUrl, cleanServiceKey)
+    const { data, error } = await (client as any)
+      .from('cron_config.settings')
+      .select('key, value')
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
+    const settings: Record<string, string> = {}
+    for (const row of ((data as Array<{ key: string; value: string }>) || [])) {
+      settings[row.key] = row.value
+    }
+    return { success: true, settings }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Failed to query database settings' }
+  }
+}
+
+/**
+ * 10. Sync / fix app_url in cron_config.settings and reschedule cron jobs.
+ */
+export async function syncDatabaseCronAppUrl(input: {
+  supabaseUrl: string
+  supabaseServiceRoleKey: string
+  managementToken?: string
+  appUrl: string
+  cronSecret?: string
+}): Promise<{
+  success: boolean
+  error?: string
+}> {
+  try {
+    const cleanUrl = input.supabaseUrl.trim().replace(/\/$/, '')
+    const cleanServiceKey = input.supabaseServiceRoleKey.trim()
+    const cleanAppUrl = input.appUrl.trim().replace(/\/$/, '')
+    const managementToken = input.managementToken?.trim()
+    const projectRef = cleanUrl.replace(/^https?:\/\//, '').split('.')[0] || ''
+
+    if (managementToken && projectRef) {
+      const sql = `
+        INSERT INTO cron_config.settings (key, value)
+        VALUES ('app_url', '${cleanAppUrl}')
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+        SELECT cron.schedule(
+          'outreach-sender',
+          '* * * * *',
+          $$
+          SELECT
+            net.http_post(
+              url     := (SELECT value || '/api/cron/sender' FROM cron_config.settings WHERE key = 'app_url'),
+              headers := jsonb_build_object(
+                'Content-Type',    'application/json',
+                'x-cron-secret',   (SELECT value FROM cron_config.settings WHERE key = 'cron_secret')
+              ),
+              body    := '{}'::jsonb
+            )
+          $$
+        );
+
+        SELECT cron.schedule(
+          'outreach-reply-checker',
+          '*/3 * * * *',
+          $$
+          SELECT
+            net.http_post(
+              url     := (SELECT value || '/api/cron/reply-checker' FROM cron_config.settings WHERE key = 'app_url'),
+              headers := jsonb_build_object(
+                'Content-Type',    'application/json',
+                'x-cron-secret',   (SELECT value FROM cron_config.settings WHERE key = 'cron_secret')
+              ),
+              body    := '{}'::jsonb
+            )
+          $$
+        );
+      `
+      const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/database/query`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${managementToken}`,
+        },
+        body: JSON.stringify({ query: sql }),
+      })
+      if (res.ok) {
+        return { success: true }
+      }
+    }
+
+    // Direct client upsert fallback
+    const client = createDynamicServerClient(cleanUrl, cleanServiceKey)
+    const { error } = await (client as any)
+      .from('cron_config.settings')
+      .upsert({ key: 'app_url', value: cleanAppUrl }, { onConflict: 'key' })
+
+    if (error) return { success: false, error: error.message }
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Failed to update app_url in database' }
+  }
+}
+

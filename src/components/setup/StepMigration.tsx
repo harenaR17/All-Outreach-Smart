@@ -46,12 +46,14 @@ export function StepMigration({ formData, onNext, onBack }: StepMigrationProps) 
     setCompletedSteps([])
 
     try {
+      const appUrl = typeof window !== 'undefined' ? window.location.origin : undefined
       const res = await runDatabaseMigrations({
         supabaseUrl: formData.supabaseUrl,
         supabaseServiceRoleKey: formData.supabaseServiceRoleKey,
         cronSecret: formData.cronSecret,
         managementToken: formData.managementToken,
         dbConnectionString: formData.dbConnectionString,
+        appUrl,
       })
 
       if (res.completedSteps) {

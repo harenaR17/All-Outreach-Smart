@@ -31,7 +31,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${mono.variable} dark h-full antialiased`}>
+    <html lang="en" className={`${inter.variable} ${mono.variable} dark h-full antialiased`} style={{ colorScheme: 'dark' }}>
       <body className="bg-zinc-950 text-zinc-100 font-sans min-h-full selection:bg-indigo-500/30 selection:text-indigo-200">
         <AuthProvider>
           <AppShell>{children}</AppShell>

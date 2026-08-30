@@ -275,8 +275,8 @@ CREATE TABLE IF NOT EXISTS cron_config.settings (
 INSERT INTO cron_config.settings (key, value)
 VALUES
   ('supabase_url',  '${supabaseUrl}'),
-  ('cron_secret',   '${cronSecret}')
-  ${cleanAppUrl ? `, ('app_url', '${cleanAppUrl}')` : ''}
+  ('cron_secret',   '${cronSecret}'),
+  ('app_url',       '${cleanAppUrl}')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;`,
     },
 
@@ -292,10 +292,7 @@ SELECT cron.schedule(
   $$
   SELECT
     net.http_post(
-      url     := COALESCE(
-        (SELECT value || '/api/cron/sender' FROM cron_config.settings WHERE key = 'app_url'),
-        (SELECT value || '/functions/v1/sender' FROM cron_config.settings WHERE key = 'supabase_url')
-      ),
+      url     := (SELECT value || '/api/cron/sender' FROM cron_config.settings WHERE key = 'app_url'),
       headers := jsonb_build_object(
         'Content-Type',    'application/json',
         'x-cron-secret',   (SELECT value FROM cron_config.settings WHERE key = 'cron_secret')
@@ -318,10 +315,7 @@ SELECT cron.schedule(
   $$
   SELECT
     net.http_post(
-      url     := COALESCE(
-        (SELECT value || '/api/cron/reply-checker' FROM cron_config.settings WHERE key = 'app_url'),
-        (SELECT value || '/functions/v1/reply-checker' FROM cron_config.settings WHERE key = 'supabase_url')
-      ),
+      url     := (SELECT value || '/api/cron/reply-checker' FROM cron_config.settings WHERE key = 'app_url'),
       headers := jsonb_build_object(
         'Content-Type',    'application/json',
         'x-cron-secret',   (SELECT value FROM cron_config.settings WHERE key = 'cron_secret')
