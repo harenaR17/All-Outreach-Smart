@@ -413,6 +413,10 @@ export async function getCronConfig(): Promise<{
   }
 }
 
+import { NextRequest } from 'next/server'
+import { POST as runSenderPost, GET as runSenderGet } from '@/app/api/cron/sender/route'
+import { POST as runReplyCheckerPost, GET as runReplyCheckerGet } from '@/app/api/cron/reply-checker/route'
+
 export async function testWorkerPing(
   worker: 'sender' | 'reply-checker',
   clientOrigin?: string
@@ -453,20 +457,17 @@ export async function testWorkerPing(
   const targetUrl = `${appUrl}/api/cron/${worker}?ping=true`
 
   try {
-    const res = await fetch(targetUrl, {
+    const dummyReq = new NextRequest(new URL(targetUrl), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         ...(cronSecret ? { 'x-cron-secret': cronSecret } : {}),
       },
-      cache: 'no-store',
     })
 
-    const bodyText = await res.text()
-    let data: any = null
-    try {
-      data = JSON.parse(bodyText)
-    } catch {}
+    const handler = worker === 'sender' ? runSenderGet : runReplyCheckerGet
+    const res = await handler(dummyReq)
+    const data = await res.json().catch(() => null)
 
     if (res.ok) {
       return {
@@ -483,7 +484,7 @@ export async function testWorkerPing(
         status: res.status,
         url: targetUrl,
         worker,
-        error: data?.error || `HTTP ${res.status}: ${bodyText || res.statusText}`,
+        error: data?.error || `HTTP ${res.status}: Verification failed`,
         data,
       }
     }
@@ -492,7 +493,7 @@ export async function testWorkerPing(
       success: false,
       url: targetUrl,
       worker,
-      error: err instanceof Error ? err.message : 'Network request failed. Ensure server is running.',
+      error: err instanceof Error ? err.message : 'Execution failed.',
     }
   }
 }
@@ -538,21 +539,18 @@ export async function executeWorkerLive(
   const startTime = Date.now()
 
   try {
-    const res = await fetch(targetUrl, {
+    const dummyReq = new NextRequest(new URL(targetUrl), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(cronSecret ? { 'x-cron-secret': cronSecret } : {}),
       },
-      cache: 'no-store',
     })
 
+    const handler = worker === 'sender' ? runSenderPost : runReplyCheckerPost
+    const res = await handler(dummyReq)
     const durationMs = Date.now() - startTime
-    const bodyText = await res.text()
-    let data: any = null
-    try {
-      data = JSON.parse(bodyText)
-    } catch {}
+    const data = await res.json().catch(() => null)
 
     if (res.ok) {
       return {
@@ -570,7 +568,7 @@ export async function executeWorkerLive(
         url: targetUrl,
         worker,
         durationMs,
-        error: data?.error || `HTTP ${res.status}: ${bodyText || res.statusText}`,
+        error: data?.error || `HTTP ${res.status}: Execution failed`,
         data,
       }
     }
@@ -581,8 +579,9 @@ export async function executeWorkerLive(
       url: targetUrl,
       worker,
       durationMs,
-      error: err instanceof Error ? err.message : 'Network request failed. Ensure server is running.',
+      error: err instanceof Error ? err.message : 'Execution failed.',
     }
   }
 }
+
 
