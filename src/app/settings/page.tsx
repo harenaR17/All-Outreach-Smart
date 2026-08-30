@@ -1,15 +1,17 @@
-import { getGeminiKeys, getTelegramRecipients, listApiKeys } from '@/app/actions/settings'
+import { getGeminiKeys, getTelegramRecipients, listApiKeys, getCronConfig } from '@/app/actions/settings'
 import { GeminiKeysManager } from '@/components/settings/GeminiKeysManager'
 import { TelegramRecipientsManager } from '@/components/settings/TelegramRecipientsManager'
 import { ApiKeysManager } from '@/components/settings/ApiKeysManager'
+import { WorkerManager } from '@/components/settings/WorkerManager'
 
 export const dynamic = 'force-dynamic'
 
 export default async function SettingsPage() {
-  const [keysRes, tgRes, apiKeysRes] = await Promise.all([
+  const [keysRes, tgRes, apiKeysRes, cronConfig] = await Promise.all([
     getGeminiKeys(),
     getTelegramRecipients(),
     listApiKeys(),
+    getCronConfig(),
   ])
 
   const geminiKeys = keysRes.data || []
@@ -30,10 +32,16 @@ export default async function SettingsPage() {
             </h1>
           </div>
           <p className="text-xs text-zinc-400 mt-1">
-            Manage Gemini API keys for reply classification, Telegram notification channels, and external API access keys.
+            Manage background cron workers, Gemini API keys for reply classification, Telegram notification channels, and external API access keys.
           </p>
         </div>
       </div>
+
+      {/* Background Workers & Crons Manager */}
+      <WorkerManager
+        hasCronSecret={cronConfig.hasCronSecret}
+        cronSecretPreview={cronConfig.cronSecretPreview}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Left Column: Gemini API Keys */}
@@ -48,3 +56,4 @@ export default async function SettingsPage() {
     </div>
   )
 }
+
