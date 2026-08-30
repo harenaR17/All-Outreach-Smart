@@ -420,7 +420,8 @@ async function handleSender(req: NextRequest) {
           let nextSendAt: string | null = null
           if (nextStep) {
             const baseDelayMs = nextStep.delay_days * 86_400 * 1_000
-            const jitterMs = (Math.floor(Math.random() * 46) + 15) * 60 * 1_000
+            // Add 15 to 60 minutes of random jitter to avoid robotic timing and batch spikes
+            const jitterMs = (Math.floor(Math.random() * 46) + 15) * 60 * 1_000 * (Math.random() < 0.5 ? -1 : 1)
             nextSendAt = new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
           }
 
