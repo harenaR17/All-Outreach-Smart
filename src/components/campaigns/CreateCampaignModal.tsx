@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { X, Megaphone, Globe, Clock, Loader2 } from 'lucide-react'
 import { createCampaign, type CreateCampaignInput } from '@/app/actions/campaigns'
 import { useRouter } from 'next/navigation'
+import { CAMPAIGN_TIMEZONES } from '@/lib/timezones'
 
 const DAYS = [
   { label: 'Mon', value: 1 },
@@ -13,22 +14,6 @@ const DAYS = [
   { label: 'Fri', value: 5 },
   { label: 'Sat', value: 6 },
   { label: 'Sun', value: 7 },
-]
-
-const TIMEZONES = [
-  'UTC',
-  'Europe/London',
-  'Europe/Paris',
-  'Europe/Berlin',
-  'Europe/Amsterdam',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'Asia/Dubai',
-  'Asia/Singapore',
-  'Asia/Tokyo',
-  'Australia/Sydney',
 ]
 
 interface Props {
@@ -127,7 +112,7 @@ export function CreateCampaignModal({ isOpen, onClose }: Props) {
               disabled={isPending}
               className="w-full px-3.5 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {TIMEZONES.map((tz) => (
+              {CAMPAIGN_TIMEZONES.map((tz) => (
                 <option key={tz} value={tz}>{tz}</option>
               ))}
             </select>

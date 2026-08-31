@@ -370,6 +370,32 @@ ALTER TABLE lead_imports
     REFERENCES campaigns(id)
     ON DELETE SET NULL;`,
     },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 12: Inbox variables & sender profile (00007_inbox_variables.sql)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add sender profile fields to email_accounts (inbox variables)',
+      sql: `
+ALTER TABLE email_accounts
+  ADD COLUMN IF NOT EXISTS first_name    text,
+  ADD COLUMN IF NOT EXISTS last_name     text,
+  ADD COLUMN IF NOT EXISTS role          text,
+  ADD COLUMN IF NOT EXISTS phone_number  text,
+  ADD COLUMN IF NOT EXISTS signature     text,
+  ADD COLUMN IF NOT EXISTS variables     jsonb NOT NULL DEFAULT '{}'::jsonb;`,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 13: Campaign send priority (00008_campaign_send_priority.sql)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add send_priority column to campaigns table',
+      sql: `
+ALTER TABLE campaigns
+  ADD COLUMN IF NOT EXISTS send_priority text NOT NULL DEFAULT 'new_leads'
+    CHECK (send_priority IN ('new_leads', 'follow_ups'));`,
+    },
   ]
 }
 

@@ -190,7 +190,7 @@ export function StepAdminUser({ formData, updateFormData, onNext, onBack }: Step
               onClick={onNext}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-sm font-medium shadow-lg shadow-indigo-500/20 transition cursor-pointer"
             >
-              <span>Next: Integrations (Optional)</span>
+              <span>Next: Background Workers</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           )}

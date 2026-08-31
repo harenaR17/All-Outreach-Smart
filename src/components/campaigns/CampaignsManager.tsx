@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, Megaphone, Search } from 'lucide-react'
 import type { CampaignWithMeta } from '@/app/actions/campaigns'
-import { deleteCampaign, pauseCampaign, launchCampaign } from '@/app/actions/campaigns'
+import { deleteCampaign, pauseCampaign, launchCampaign, duplicateCampaign } from '@/app/actions/campaigns'
 import { CampaignCard } from './CampaignCard'
 import { CreateCampaignModal } from './CreateCampaignModal'
 
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function CampaignsManager({ initialCampaigns }: Props) {
+  const router = useRouter()
   const [campaigns, setCampaigns] = useState<CampaignWithMeta[]>(initialCampaigns)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -42,6 +44,13 @@ export function CampaignsManager({ initialCampaigns }: Props) {
           prev.map((c) => (c.id === id ? { ...c, status: 'active' } : c))
         )
       }
+    }
+  }
+
+  const handleDuplicate = async (id: string) => {
+    const res = await duplicateCampaign(id)
+    if (res.success && res.data) {
+      router.push(`/campaigns/${res.data.id}`)
     }
   }
 
@@ -104,6 +113,7 @@ export function CampaignsManager({ initialCampaigns }: Props) {
               campaign={campaign}
               onDelete={handleDelete}
               onTogglePause={handleTogglePause}
+              onDuplicate={handleDuplicate}
             />
           ))}
         </div>

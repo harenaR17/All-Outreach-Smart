@@ -32,8 +32,6 @@ interface StepEdgeFunctionsProps {
     supabaseServiceRoleKey: string
     managementToken?: string
     cronSecret: string
-    geminiApiKey: string
-    telegramBotToken: string
     adminEmail: string
   }
   onBack: () => void
@@ -130,8 +128,6 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
       const secrets: Record<string, string> = {
         CRON_SECRET: formData.cronSecret,
       }
-      if (formData.geminiApiKey) secrets.GEMINI_API_KEY = formData.geminiApiKey
-      if (formData.telegramBotToken) secrets.TELEGRAM_BOT_TOKEN = formData.telegramBotToken
 
       const res = await setProjectSecrets({
         projectRef,
@@ -183,8 +179,6 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
         supabaseAnonKey: formData.supabaseAnonKey,
         supabaseServiceRoleKey: formData.supabaseServiceRoleKey,
         cronSecret: formData.cronSecret,
-        geminiApiKey: formData.geminiApiKey,
-        telegramBotToken: formData.telegramBotToken,
         setupCompleted: true,
       })
 

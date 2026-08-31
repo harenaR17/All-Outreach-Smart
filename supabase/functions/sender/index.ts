@@ -28,12 +28,19 @@ interface Campaign {
   working_days: number[]
   working_hours_start: string
   working_hours_end: string
+  send_priority?: 'new_leads' | 'follow_ups'
 }
 
 interface EmailAccount {
   id: string
   email_address: string
   display_name?: string | null
+  first_name?: string | null
+  last_name?: string | null
+  role?: string | null
+  phone_number?: string | null
+  signature?: string | null
+  variables?: Record<string, string> | null
   service_account_client_email: string
   service_account_private_key: string
   daily_send_limit: number
@@ -126,7 +133,7 @@ Deno.serve(async (req: Request) => {
       if (!steps || steps.length === 0) continue
       const campaignSteps = steps as CampaignStep[]
 
-      // 5. Fetch due campaign leads
+      // 5. Fetch due campaign leads (buffer of up to 10 candidates to evaluate)
       //    a) Pending leads (never contacted, current_step=0, status='pending')
       //    b) Active leads with next_send_at <= now (follow-ups)
       const remaining = 30
@@ -150,10 +157,16 @@ Deno.serve(async (req: Request) => {
           .limit(remaining),
       ])
 
-      const dueCampaignLeads: CampaignLead[] = [
-        ...((pendingRes.data ?? []) as CampaignLead[]),
-        ...((activeRes.data ?? []) as CampaignLead[]),
-      ]
+      const isFollowUpPriority = campaign.send_priority === 'follow_ups'
+      const dueCampaignLeads: CampaignLead[] = isFollowUpPriority
+        ? [
+            ...((activeRes.data ?? []) as CampaignLead[]),
+            ...((pendingRes.data ?? []) as CampaignLead[]),
+          ]
+        : [
+            ...((pendingRes.data ?? []) as CampaignLead[]),
+            ...((activeRes.data ?? []) as CampaignLead[]),
+          ]
 
       if (dueCampaignLeads.length === 0) continue
 
@@ -281,16 +294,43 @@ Deno.serve(async (req: Request) => {
               : `Re: ${step1SubjectTemplate}`
           )
 
+        // Build inbox/sender variable map for template interpolation
+        const nameParts = (assignedInbox.display_name ?? '').trim().split(/\s+/)
+        const senderFirstName = assignedInbox.first_name?.trim() || nameParts[0] || ''
+        const senderLastName  = assignedInbox.last_name?.trim()  || nameParts.slice(1).join(' ') || ''
+        const senderFullName  = [senderFirstName, senderLastName].filter(Boolean).join(' ') || assignedInbox.display_name || ''
+        const senderSig       = assignedInbox.signature?.trim() ?? ''
+        const senderPhone     = assignedInbox.phone_number?.trim() ?? ''
+        const senderRole      = assignedInbox.role?.trim() ?? ''
+        const inboxVariables: Record<string, string> = {
+          sender_email:      assignedInbox.email_address,
+          sending_account_email: assignedInbox.email_address,
+          sender_name:       senderFullName,
+          sender_first_name: senderFirstName,
+          sending_account_first_name: senderFirstName,
+          sender_last_name:  senderLastName,
+          sending_account_last_name: senderLastName,
+          sender_role:       senderRole,
+          sender_phone:      senderPhone,
+          phone_number:      senderPhone,
+          sender_signature:  senderSig,
+          account_signature: senderSig,
+          signature:         senderSig,
+          ...(assignedInbox.variables ?? {}),
+        }
+
         const variables = (lead.variables ?? {}) as Record<string, unknown>
         const { rendered: subject, missing: missingSubj } = renderTemplate(
           effectiveSubjectTemplate,
           variables,
           lead.email,
+          inboxVariables,
         )
         const { rendered: body, missing: missingBody } = renderTemplate(
           step.body_template,
           variables,
           lead.email,
+          inboxVariables,
         )
         const allMissing = [...new Set([...missingSubj, ...missingBody])]
 
@@ -577,6 +617,7 @@ function renderTemplate(
   template: string,
   variables: Record<string, unknown>,
   email: string,
+  inboxVariables?: Record<string, string>,
 ): { rendered: string; missing: string[] } {
   const missing: string[] = []
   const seen = new Set<string>()
@@ -584,8 +625,13 @@ function renderTemplate(
   const rendered = template.replace(TOKEN_REGEX, (_, token: string) => {
     if (token === 'email') return email
 
+    // Lead variables take precedence
     const val = variables[token]
     if (val !== undefined && val !== null && val !== '') return String(val)
+
+    // Fall back to inbox variables
+    const inboxVal = inboxVariables?.[token]
+    if (inboxVal !== undefined && inboxVal !== '') return inboxVal
 
     if (!seen.has(token)) {
       missing.push(token)

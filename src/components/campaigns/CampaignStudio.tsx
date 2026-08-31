@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react'
 import {
-  Layers, Inbox, Settings, Globe, Clock, Users, Send, Check
+  Layers, Inbox, Settings, Globe, Clock, Users, Send, Check, Zap
 } from 'lucide-react'
 import type { CampaignDetail, SaveCampaignInput, SaveStepInput, CampaignLeadItem } from '@/app/actions/campaigns'
 import type { EmailAccount, Lead, Campaign, TelegramRecipient } from '@/lib/types/database'
@@ -11,17 +11,12 @@ import { LiveLeadPreview } from './LiveLeadPreview'
 import { InboxPoolSelector } from './InboxPoolSelector'
 import { CampaignActionBar } from './CampaignActionBar'
 import { CampaignLeadsTab } from './CampaignLeadsTab'
+import { CAMPAIGN_TIMEZONES } from '@/lib/timezones'
 
 const DAYS = [
   { label: 'Mon', value: 1 }, { label: 'Tue', value: 2 }, { label: 'Wed', value: 3 },
   { label: 'Thu', value: 4 }, { label: 'Fri', value: 5 }, { label: 'Sat', value: 6 },
   { label: 'Sun', value: 7 },
-]
-
-const TIMEZONES = [
-  'UTC', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Amsterdam',
-  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-  'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney',
 ]
 
 type Tab = 'leads' | 'sequence' | 'inboxes' | 'schedule'
@@ -53,6 +48,7 @@ export function CampaignStudio({
   const [hoursStart, setHoursStart] = useState(campaign.working_hours_start.slice(0, 5))
   const [hoursEnd, setHoursEnd] = useState(campaign.working_hours_end.slice(0, 5))
   const [stopOnAutoReply, setStopOnAutoReply] = useState(campaign.stop_on_auto_reply ?? true)
+  const [sendPriority, setSendPriority] = useState<'new_leads' | 'follow_ups'>(campaign.send_priority ?? 'new_leads')
   const [steps, setSteps] = useState<SaveStepInput[]>(
     campaign.steps.map((s) => ({
       id: s.id,
@@ -73,6 +69,7 @@ export function CampaignStudio({
     hoursStart: campaign.working_hours_start.slice(0, 5),
     hoursEnd: campaign.working_hours_end.slice(0, 5),
     stopOnAutoReply: campaign.stop_on_auto_reply ?? true,
+    sendPriority: campaign.send_priority ?? 'new_leads',
     steps: JSON.stringify(campaign.steps),
     inboxIds: JSON.stringify(campaign.inboxIds),
     recipientIds: JSON.stringify(campaign.recipientIds || []),
@@ -85,6 +82,7 @@ export function CampaignStudio({
     hoursStart !== initialState.current.hoursStart ||
     hoursEnd !== initialState.current.hoursEnd ||
     stopOnAutoReply !== initialState.current.stopOnAutoReply ||
+    sendPriority !== initialState.current.sendPriority ||
     JSON.stringify(steps) !== initialState.current.steps ||
     JSON.stringify(selectedInboxIds) !== initialState.current.inboxIds ||
     JSON.stringify(selectedRecipientIds) !== initialState.current.recipientIds
@@ -112,10 +110,11 @@ export function CampaignStudio({
     working_hours_start: `${hoursStart}:00`,
     working_hours_end: `${hoursEnd}:00`,
     stop_on_auto_reply: stopOnAutoReply,
+    send_priority: sendPriority,
     steps,
     inboxIds: selectedInboxIds,
     recipientIds: selectedRecipientIds,
-  }), [name, timezone, workingDays, hoursStart, hoursEnd, stopOnAutoReply, steps, selectedInboxIds, selectedRecipientIds])
+  }), [name, timezone, workingDays, hoursStart, hoursEnd, stopOnAutoReply, sendPriority, steps, selectedInboxIds, selectedRecipientIds])
 
   // Extract available tokens from campaign leads for the inserter
   const availableTokens = Array.from(
@@ -128,8 +127,8 @@ export function CampaignStudio({
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'leads',    label: `Leads (${campaignLeads.length || campaign.leadCount})`, icon: <Users className="w-3.5 h-3.5" /> },
-    { id: 'sequence', label: 'Sequence', icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'inboxes',  label: `Inboxes (${selectedInboxIds.length})`, icon: <Inbox className="w-3.5 h-3.5" /> },
+    { id: 'sequence', label: `Sequence (${campaign.steps.length})`, icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'schedule', label: 'Schedule', icon: <Settings className="w-3.5 h-3.5" /> },
   ]
 
@@ -187,6 +186,21 @@ export function CampaignStudio({
         </div>
       )}
 
+      {activeTab === 'inboxes' && (
+        <div>
+          <h3 className="text-xs font-semibold text-zinc-300 mb-4 flex items-center gap-2">
+            <Inbox className="w-3.5 h-3.5 text-indigo-400" />
+            Assigned Inbox Pool
+          </h3>
+          <InboxPoolSelector
+            availableInboxes={allInboxes}
+            selectedInboxIds={selectedInboxIds}
+            onChange={setSelectedInboxIds}
+            disabled={isReadOnly}
+          />
+        </div>
+      )}
+
       {activeTab === 'sequence' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-3">
@@ -207,23 +221,12 @@ export function CampaignStudio({
             />
           </div>
           <div className="space-y-3">
-            <LiveLeadPreview steps={steps} leads={campaignLeads} />
+            <LiveLeadPreview
+              steps={steps}
+              leads={campaignLeads}
+              inboxes={allInboxes.filter((i) => selectedInboxIds.includes(i.id))}
+            />
           </div>
-        </div>
-      )}
-
-      {activeTab === 'inboxes' && (
-        <div>
-          <h3 className="text-xs font-semibold text-zinc-300 mb-4 flex items-center gap-2">
-            <Inbox className="w-3.5 h-3.5 text-indigo-400" />
-            Assigned Inbox Pool
-          </h3>
-          <InboxPoolSelector
-            availableInboxes={allInboxes}
-            selectedInboxIds={selectedInboxIds}
-            onChange={setSelectedInboxIds}
-            disabled={isReadOnly}
-          />
         </div>
       )}
 
@@ -252,7 +255,7 @@ export function CampaignStudio({
               disabled={isReadOnly}
               className="w-full px-3.5 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
             >
-              {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+              {CAMPAIGN_TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
             </select>
           </div>
 
@@ -320,6 +323,62 @@ export function CampaignStudio({
               className="w-4 h-4 rounded border-zinc-700 accent-indigo-600 cursor-pointer shrink-0"
             />
           </label>
+
+          {/* Lead Sending Priority */}
+          <div className="space-y-2 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-400" />
+                Lead Sending Priority
+              </label>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Choose whether this campaign prioritizes starting new leads or delivering follow-up emails first when both are due.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => !isReadOnly && setSendPriority('new_leads')}
+                disabled={isReadOnly}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  sendPriority === 'new_leads'
+                    ? 'bg-amber-500/10 border-amber-500/40 shadow-sm shadow-amber-950/20'
+                    : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-semibold ${sendPriority === 'new_leads' ? 'text-amber-200' : 'text-zinc-300'}`}>
+                    Prioritize New Leads
+                  </span>
+                  {sendPriority === 'new_leads' && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                </div>
+                <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
+                  Sends Step 1 emails to pending leads first before delivering scheduled follow-ups.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => !isReadOnly && setSendPriority('follow_ups')}
+                disabled={isReadOnly}
+                className={`p-3 rounded-xl border text-left transition-all ${
+                  sendPriority === 'follow_ups'
+                    ? 'bg-indigo-500/10 border-indigo-500/40 shadow-sm shadow-indigo-950/20'
+                    : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-semibold ${sendPriority === 'follow_ups' ? 'text-indigo-200' : 'text-zinc-300'}`}>
+                    Prioritize Follow-ups
+                  </span>
+                  {sendPriority === 'follow_ups' && <Check className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                </div>
+                <p className="text-[10px] text-zinc-500 mt-1 leading-relaxed">
+                  Sends due follow-up emails first to keep active threads warm before starting new leads.
+                </p>
+              </button>
+            </div>
+          </div>
 
           {/* Telegram Notification Recipients */}
           <div className="space-y-2 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">

@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import {
-  Save, Play, Pause, Loader2, AlertTriangle, CheckCircle2, RotateCcw
+  Save, Play, Pause, Loader2, AlertTriangle, CheckCircle2, RotateCcw, Copy
 } from 'lucide-react'
 import type { Campaign } from '@/lib/types/database'
 import type { SaveCampaignInput } from '@/app/actions/campaigns'
-import { saveCampaign, launchCampaign, pauseCampaign } from '@/app/actions/campaigns'
+import { saveCampaign, launchCampaign, pauseCampaign, duplicateCampaign } from '@/app/actions/campaigns'
 
 interface Props {
   campaign: Campaign
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function CampaignActionBar({ campaign, getFormData, onStatusChange, hasUnsavedChanges }: Props) {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
@@ -60,6 +62,18 @@ export function CampaignActionBar({ campaign, getFormData, onStatusChange, hasUn
     })
   }
 
+  const handleDuplicate = () => {
+    setFeedback(null)
+    startTransition(async () => {
+      const res = await duplicateCampaign(campaign.id)
+      if (res.success && res.data) {
+        router.push(`/campaigns/${res.data.id}`)
+      } else {
+        setFeedback({ type: 'error', message: res.error || 'Duplicate failed.' })
+      }
+    })
+  }
+
   const status = campaign.status
 
   return (
@@ -92,6 +106,16 @@ export function CampaignActionBar({ campaign, getFormData, onStatusChange, hasUn
 
       {/* Action Buttons */}
       <div className="flex items-center gap-3 flex-wrap">
+        <button
+          type="button"
+          onClick={handleDuplicate}
+          disabled={isPending}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-700 bg-zinc-800/60 hover:bg-zinc-800 text-xs font-medium text-zinc-200 transition-all cursor-pointer disabled:opacity-50"
+        >
+          {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+          Duplicate
+        </button>
+
         {/* DRAFT: Save + Launch */}
         {status === 'draft' && (
           <>
@@ -161,7 +185,7 @@ export function CampaignActionBar({ campaign, getFormData, onStatusChange, hasUn
         {/* COMPLETED */}
         {status === 'completed' && (
           <span className="text-[11px] text-zinc-500 bg-zinc-900/60 px-3 py-2 rounded-lg border border-zinc-800">
-            This campaign has completed. Duplicate it to run again.
+            This campaign has completed. Duplicate it to run again with new leads.
           </span>
         )}
       </div>

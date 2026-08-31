@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Send, Plus, Trash2, CheckCircle2, AlertCircle, Loader2, Info, Check, MessageSquare, KeyRound, Eye, EyeOff } from 'lucide-react'
+import { Send, Plus, Trash2, CheckCircle2, AlertCircle, Loader2, Info, Check, MessageSquare, KeyRound, Eye, EyeOff, Bot, ExternalLink } from 'lucide-react'
 import type { TelegramRecipient } from '@/lib/types/database'
 import {
   addTelegramRecipient,
@@ -132,7 +132,20 @@ export function TelegramRecipientsManager({ initialRecipients }: Props) {
 
       {/* Add Form */}
       <form onSubmit={handleAdd} className="space-y-3 bg-zinc-950/40 p-4 rounded-xl border border-zinc-800/80">
-        <span className="text-xs font-medium text-zinc-200">Add Notification Associate</span>
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-zinc-300 uppercase tracking-wider flex items-center gap-2">
+            <Bot className="w-4 h-4 text-blue-400" />
+            Telegram Bot Token
+          </label>
+          <a
+            href="https://t.me/BotFather"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition"
+          >
+            @BotFather <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
           <div className="sm:col-span-4">
             <input

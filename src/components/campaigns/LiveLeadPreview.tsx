@@ -1,18 +1,20 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { Eye, AlertTriangle, CheckCircle2, User, ChevronDown } from 'lucide-react'
+import { Eye, AlertTriangle, CheckCircle2, User, ChevronDown, Inbox } from 'lucide-react'
 import type { SaveStepInput } from '@/app/actions/campaigns'
-import type { Lead } from '@/lib/types/database'
-import { segmentTemplate, extractTokens } from '@/lib/templates/renderer'
+import type { Lead, EmailAccount } from '@/lib/types/database'
+import { segmentTemplate, extractTokens, buildInboxVariableMap } from '@/lib/templates/renderer'
 
 interface Props {
   steps: SaveStepInput[]
   leads: Pick<Lead, 'id' | 'email' | 'variables'>[]
+  inboxes?: Pick<EmailAccount, 'id' | 'email_address' | 'display_name' | 'first_name' | 'last_name' | 'role' | 'phone_number' | 'signature' | 'variables'>[]
 }
 
-export function LiveLeadPreview({ steps, leads }: Props) {
+export function LiveLeadPreview({ steps, leads, inboxes = [] }: Props) {
   const [selectedLeadId, setSelectedLeadId] = useState<string>(leads[0]?.id ?? '')
+  const [selectedInboxId, setSelectedInboxId] = useState<string>(inboxes[0]?.id ?? '')
   const [selectedStepIndex, setSelectedStepIndex] = useState<number>(0)
 
   useEffect(() => {
@@ -25,8 +27,20 @@ export function LiveLeadPreview({ steps, leads }: Props) {
     }
   }, [leads, selectedLeadId])
 
+  useEffect(() => {
+    if (!selectedInboxId || !inboxes.some((i) => i.id === selectedInboxId)) {
+      setSelectedInboxId(inboxes[0]?.id ?? '')
+    }
+  }, [inboxes, selectedInboxId])
+
   const selectedLead = leads.find((l) => l.id === selectedLeadId)
+  const selectedInbox = inboxes.find((i) => i.id === selectedInboxId)
   const currentStep = steps[selectedStepIndex]
+
+  const inboxVars = useMemo(() => {
+    if (!selectedInbox) return undefined
+    return buildInboxVariableMap(selectedInbox)
+  }, [selectedInbox])
 
   const { subjectSegments, bodySegments, missingTokens, allTokens } = useMemo(() => {
     if (!currentStep || !selectedLead) {
@@ -45,18 +59,22 @@ export function LiveLeadPreview({ steps, leads }: Props) {
             : `Re: ${step1Subject}`
         )
 
-    const subSeg = segmentTemplate(effectiveSubject, vars, email)
-    const bodySeg = segmentTemplate(currentStep.body_template, vars, email)
+    const subSeg = segmentTemplate(effectiveSubject, vars, email, inboxVars)
+    const bodySeg = segmentTemplate(currentStep.body_template, vars, email, inboxVars)
 
     const missing = new Set<string>()
     const all = extractTokens(effectiveSubject + '\n' + currentStep.body_template)
     for (const t of all) {
       if (t === 'email') continue
-      if (vars[t] === undefined || vars[t] === null || vars[t] === '') missing.add(t)
+      const leadVal = vars[t]
+      const inboxVal = inboxVars?.[t]
+      const hasVal = (leadVal !== undefined && leadVal !== null && leadVal !== '') ||
+                     (inboxVal !== undefined && inboxVal !== '')
+      if (!hasVal) missing.add(t)
     }
 
     return { subjectSegments: subSeg, bodySegments: bodySeg, missingTokens: Array.from(missing), allTokens: all }
-  }, [currentStep, selectedLead, steps, selectedStepIndex])
+  }, [currentStep, selectedLead, steps, selectedStepIndex, inboxVars])
 
   return (
     <div className="space-y-4">
@@ -68,29 +86,55 @@ export function LiveLeadPreview({ steps, leads }: Props) {
         <h3 className="text-xs font-semibold text-zinc-200">Live Preview</h3>
       </div>
 
-      {/* Lead Selector */}
-      {leads.length > 0 ? (
-        <div className="space-y-1.5">
-          <label className="text-[10px] text-zinc-500 font-medium">Preview Lead</label>
-          <div className="relative">
-            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
-            <select
-              value={selectedLeadId}
-              onChange={(e) => setSelectedLeadId(e.target.value)}
-              className="w-full pl-8 pr-8 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 appearance-none cursor-pointer"
-            >
-              {leads.map((l) => (
-                <option key={l.id} value={l.id}>{l.email}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
+      {/* Lead + Inbox Selectors */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Lead Selector */}
+        {leads.length > 0 ? (
+          <div className="space-y-1.5">
+            <label className="text-[10px] text-zinc-500 font-medium">Preview Lead</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
+              <select
+                value={selectedLeadId}
+                onChange={(e) => setSelectedLeadId(e.target.value)}
+                className="w-full pl-8 pr-8 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-purple-500/40 appearance-none cursor-pointer"
+              >
+                {leads.map((l) => (
+                  <option key={l.id} value={l.id}>{l.email}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
+            </div>
           </div>
-        </div>
-      ) : (
-        <p className="text-[11px] text-zinc-500 bg-zinc-900/40 border border-zinc-800 rounded-lg px-3 py-2">
-          No leads enrolled in this campaign yet. Go to the <strong>Leads</strong> tab to import leads for sequence preview.
-        </p>
-      )}
+        ) : (
+          <p className="text-[11px] text-zinc-500 bg-zinc-900/40 border border-zinc-800 rounded-lg px-3 py-2 sm:col-span-2">
+            No leads enrolled in this campaign yet. Go to the <strong>Leads</strong> tab to import leads for sequence preview.
+          </p>
+        )}
+
+        {/* Inbox Selector */}
+        {inboxes.length > 0 && (
+          <div className="space-y-1.5">
+            <label className="text-[10px] text-indigo-400/70 font-medium">Sending as Inbox</label>
+            <div className="relative">
+              <Inbox className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-indigo-400/50 pointer-events-none" />
+              <select
+                value={selectedInboxId}
+                onChange={(e) => setSelectedInboxId(e.target.value)}
+                className="w-full pl-8 pr-8 py-2 rounded-lg bg-indigo-950/30 border border-indigo-500/20 text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 appearance-none cursor-pointer"
+              >
+                <option value="">(no inbox selected)</option>
+                {inboxes.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.display_name ? `${i.display_name} <${i.email_address}>` : i.email_address}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500 pointer-events-none" />
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Step Selector */}
       {steps.length > 0 && (
@@ -120,7 +164,7 @@ export function LiveLeadPreview({ steps, leads }: Props) {
         <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
           <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-            Missing variables for this lead
+            Missing variables for this lead{selectedInbox ? ' / inbox' : ''}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {missingTokens.map((t) => (
@@ -130,7 +174,7 @@ export function LiveLeadPreview({ steps, leads }: Props) {
             ))}
           </div>
           <p className="text-[11px] text-amber-300/70">
-            These tokens will remain unreplaced in the sent email. Update the lead&apos;s variables or revise the template.
+            These tokens will remain unreplaced in the sent email. Update the lead&apos;s variables, the inbox sender profile, or revise the template.
           </p>
         </div>
       )}
@@ -139,7 +183,7 @@ export function LiveLeadPreview({ steps, leads }: Props) {
       {selectedLead && allTokens.length > 0 && missingTokens.length === 0 && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400">
           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-          All variables resolve for this lead
+          All variables resolve for this lead{selectedInbox ? ' and inbox' : ''}
         </div>
       )}
 

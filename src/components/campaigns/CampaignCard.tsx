@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Megaphone, Globe, Clock, Layers, Inbox, Users, ChevronRight, Pause, Play, Trash2 } from 'lucide-react'
+import { Megaphone, Globe, Clock, Layers, Inbox, Users, ChevronRight, Pause, Play, Trash2, Copy } from 'lucide-react'
 import type { CampaignWithMeta } from '@/app/actions/campaigns'
 
 const STATUS_STYLES: Record<string, { label: string; bg: string; text: string; dot: string }> = {
@@ -17,9 +17,10 @@ interface Props {
   campaign: CampaignWithMeta
   onDelete?: (id: string) => void
   onTogglePause?: (id: string, currentStatus: string) => void
+  onDuplicate?: (id: string) => void
 }
 
-export function CampaignCard({ campaign, onDelete, onTogglePause }: Props) {
+export function CampaignCard({ campaign, onDelete, onTogglePause, onDuplicate }: Props) {
   const router = useRouter()
   const style = STATUS_STYLES[campaign.status] ?? STATUS_STYLES.draft
 
@@ -64,6 +65,18 @@ export function CampaignCard({ campaign, onDelete, onTogglePause }: Props) {
         <Dot />
         <Stat icon={<Users className="w-3 h-3" />} value={campaign.leadCount} label="leads" />
         <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onDuplicate && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onDuplicate(campaign.id)
+              }}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors cursor-pointer"
+              title="Duplicate campaign"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          )}
           {onTogglePause && (campaign.status === 'active' || campaign.status === 'paused') && (
             <button
               onClick={(e) => {

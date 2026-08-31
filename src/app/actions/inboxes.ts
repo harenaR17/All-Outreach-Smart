@@ -55,6 +55,11 @@ export async function getInboxes(): Promise<{
 export interface AddInboxInput {
   emailAddress: string
   displayName?: string
+  firstName?: string
+  lastName?: string
+  role?: string
+  phoneNumber?: string
+  signature?: string
   clientEmail: string
   privateKey: string
   dailySendLimit?: number
@@ -73,6 +78,11 @@ export async function addInbox(input: AddInboxInput): Promise<{
     const clientEmail = input.clientEmail.trim()
     const privateKey = normalizePrivateKey(input.privateKey)
     const displayName = input.displayName?.trim() || null
+    const firstName = input.firstName?.trim() || null
+    const lastName = input.lastName?.trim() || null
+    const role = input.role?.trim() || null
+    const phoneNumber = input.phoneNumber?.trim() || null
+    const signature = input.signature?.trim() || null
     const dailySendLimit = Number(input.dailySendLimit) || 30
     const minSecondsBetweenSends = Number(input.minSecondsBetweenSends) || 180
 
@@ -124,6 +134,12 @@ export async function addInbox(input: AddInboxInput): Promise<{
       .insert({
         email_address: emailAddress,
         display_name: displayName,
+        first_name: firstName,
+        last_name: lastName,
+        role: role,
+        phone_number: phoneNumber,
+        signature: signature,
+        variables: {},
         service_account_client_email: clientEmail,
         service_account_private_key: privateKey,
         google_access_token: testSend.accessToken || verification.accessToken || null,
@@ -286,6 +302,12 @@ export async function updateInboxSettings(
     min_seconds_between_sends?: number
     is_active?: boolean
     display_name?: string | null
+    first_name?: string | null
+    last_name?: string | null
+    role?: string | null
+    phone_number?: string | null
+    signature?: string | null
+    variables?: Record<string, string>
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
@@ -303,6 +325,24 @@ export async function updateInboxSettings(
     }
     if (updates.display_name !== undefined) {
       updatePayload.display_name = updates.display_name
+    }
+    if (updates.first_name !== undefined) {
+      updatePayload.first_name = updates.first_name
+    }
+    if (updates.last_name !== undefined) {
+      updatePayload.last_name = updates.last_name
+    }
+    if (updates.role !== undefined) {
+      updatePayload.role = updates.role
+    }
+    if (updates.phone_number !== undefined) {
+      updatePayload.phone_number = updates.phone_number
+    }
+    if (updates.signature !== undefined) {
+      updatePayload.signature = updates.signature
+    }
+    if (updates.variables !== undefined) {
+      updatePayload.variables = updates.variables
     }
 
     const { error } = await supabase

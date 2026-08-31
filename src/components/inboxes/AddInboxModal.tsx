@@ -48,6 +48,12 @@ export function AddInboxModal({ isOpen, onClose }: AddInboxModalProps) {
   // Form Fields
   const [emailAddress, setEmailAddress] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [role, setRole] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [signature, setSignature] = useState('')
+  const [showSenderProfile, setShowSenderProfile] = useState(false)
   const [clientEmail, setClientEmail] = useState('')
   const [privateKey, setPrivateKey] = useState('')
   const [dailySendLimit, setDailySendLimit] = useState(30)
@@ -106,6 +112,11 @@ export function AddInboxModal({ isOpen, onClose }: AddInboxModalProps) {
       const res = await addInbox({
         emailAddress,
         displayName: displayName || undefined,
+        firstName: firstName || undefined,
+        lastName: lastName || undefined,
+        role: role || undefined,
+        phoneNumber: phoneNumber || undefined,
+        signature: signature || undefined,
         clientEmail,
         privateKey,
         dailySendLimit,
@@ -119,6 +130,11 @@ export function AddInboxModal({ isOpen, onClose }: AddInboxModalProps) {
           // Reset
           setEmailAddress('')
           setDisplayName('')
+          setFirstName('')
+          setLastName('')
+          setRole('')
+          setPhoneNumber('')
+          setSignature('')
           setClientEmail('')
           setPrivateKey('')
           setJsonPaste('')
@@ -499,6 +515,87 @@ export function AddInboxModal({ isOpen, onClose }: AddInboxModalProps) {
                 disabled={isPending}
                 className="w-full px-3.5 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-mono text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500"
               />
+            </div>
+
+            {/* Sender Profile (Optional Expandable) */}
+            <div className="rounded-xl bg-zinc-900/40 border border-zinc-800 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowSenderProfile(!showSenderProfile)}
+                className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-medium text-zinc-300 hover:text-white hover:bg-zinc-800/40 transition-colors"
+              >
+                <span className="flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  Sender Profile &amp; Signature (Optional)
+                </span>
+                {showSenderProfile ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+
+              {showSenderProfile && (
+                <div className="p-4 pt-1 space-y-3 border-t border-zinc-800/60">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-zinc-400">First Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Paul"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        disabled={isPending}
+                        className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-zinc-400">Last Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Martin"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        disabled={isPending}
+                        className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-zinc-400">Job Title / Role</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Head of Growth"
+                        value={role}
+                        onChange={(e) => setRole(e.target.value)}
+                        disabled={isPending}
+                        className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-medium text-zinc-400">Phone Number</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. +1 555 0199"
+                        value={phoneNumber}
+                        onChange={(e) => setPhoneNumber(e.target.value)}
+                        disabled={isPending}
+                        className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-zinc-400">Email Signature</label>
+                    <textarea
+                      rows={2}
+                      placeholder={`Best regards,\nPaul Martin\nHead of Growth`}
+                      value={signature}
+                      onChange={(e) => setSignature(e.target.value)}
+                      disabled={isPending}
+                      className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Rate Limits */}

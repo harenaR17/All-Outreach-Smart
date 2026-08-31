@@ -173,6 +173,7 @@ export type Database = {
           working_hours_end: string
           working_hours_start: string
           stop_on_auto_reply: boolean
+          send_priority: "new_leads" | "follow_ups"
         }
         Insert: {
           created_at?: string
@@ -184,6 +185,7 @@ export type Database = {
           working_hours_end?: string
           working_hours_start?: string
           stop_on_auto_reply?: boolean
+          send_priority?: "new_leads" | "follow_ups"
         }
         Update: {
           created_at?: string
@@ -195,6 +197,7 @@ export type Database = {
           working_hours_end?: string
           working_hours_start?: string
           stop_on_auto_reply?: boolean
+          send_priority?: "new_leads" | "follow_ups"
         }
         Relationships: []
       }
@@ -205,17 +208,23 @@ export type Database = {
           display_name: string | null
           email_address: string
           error_message: string | null
+          first_name: string | null
           google_access_token: string | null
           google_token_expires_at: string | null
           id: string
           is_active: boolean
+          last_name: string | null
           last_new_lead_sent_at: string | null
           last_sent_at: string | null
           min_seconds_between_sends: number
           next_available_at: string
+          phone_number: string | null
+          role: string | null
           service_account_client_email: string
           service_account_private_key: string
+          signature: string | null
           status: "active" | "error"
+          variables: Record<string, string>
         }
         Insert: {
           created_at?: string
@@ -223,17 +232,23 @@ export type Database = {
           display_name?: string | null
           email_address: string
           error_message?: string | null
+          first_name?: string | null
           google_access_token?: string | null
           google_token_expires_at?: string | null
           id?: string
           is_active?: boolean
+          last_name?: string | null
           last_new_lead_sent_at?: string | null
           last_sent_at?: string | null
           min_seconds_between_sends?: number
           next_available_at?: string
+          phone_number?: string | null
+          role?: string | null
           service_account_client_email: string
           service_account_private_key: string
+          signature?: string | null
           status?: "active" | "error"
+          variables?: Record<string, string>
         }
         Update: {
           created_at?: string
@@ -241,17 +256,23 @@ export type Database = {
           display_name?: string | null
           email_address?: string
           error_message?: string | null
+          first_name?: string | null
           google_access_token?: string | null
           google_token_expires_at?: string | null
           id?: string
           is_active?: boolean
+          last_name?: string | null
           last_new_lead_sent_at?: string | null
           last_sent_at?: string | null
           min_seconds_between_sends?: number
           next_available_at?: string
+          phone_number?: string | null
+          role?: string | null
           service_account_client_email?: string
           service_account_private_key?: string
+          signature?: string | null
           status?: "active" | "error"
+          variables?: Record<string, string>
         }
         Relationships: []
       }

@@ -5,17 +5,15 @@ import { getSetupStatus } from '@/app/actions/setup'
 import { StepSupabase } from '@/components/setup/StepSupabase'
 import { StepMigration } from '@/components/setup/StepMigration'
 import { StepAdminUser } from '@/components/setup/StepAdminUser'
-import { StepIntegrations } from '@/components/setup/StepIntegrations'
 import { StepEdgeFunctions } from '@/components/setup/StepEdgeFunctions'
-import { Send, Database, Layers, UserCheck, Sparkles, Rocket, Check, Loader2 } from 'lucide-react'
+import { Send, Database, Layers, UserCheck, Rocket, Check, Loader2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 const STEPS = [
   { id: 1, label: 'Supabase', icon: Database },
   { id: 2, label: 'Migration', icon: Layers },
   { id: 3, label: 'Admin', icon: UserCheck },
-  { id: 4, label: 'Integrations', icon: Sparkles },
-  { id: 5, label: 'Edge & Deploy', icon: Rocket },
+  { id: 4, label: 'Workers & Deploy', icon: Rocket },
 ]
 
 export default function SetupPage() {
@@ -32,9 +30,6 @@ export default function SetupPage() {
     cronSecret: '',
     adminEmail: '',
     adminPassword: '',
-    geminiApiKey: '',
-    telegramBotToken: '',
-    telegramChatId: '',
   })
 
   const updateFormData = (data: Partial<typeof formData>) => {
@@ -178,18 +173,9 @@ export default function SetupPage() {
         )}
 
         {currentStep === 4 && (
-          <StepIntegrations
-            formData={formData}
-            updateFormData={updateFormData}
-            onNext={() => setCurrentStep(5)}
-            onBack={() => setCurrentStep(3)}
-          />
-        )}
-
-        {currentStep === 5 && (
           <StepEdgeFunctions
             formData={formData}
-            onBack={() => setCurrentStep(4)}
+            onBack={() => setCurrentStep(3)}
           />
         )}
       </div>

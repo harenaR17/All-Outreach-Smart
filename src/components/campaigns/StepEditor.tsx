@@ -4,7 +4,17 @@ import { useState } from 'react'
 import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Mail, Zap } from 'lucide-react'
 import type { SaveStepInput } from '@/app/actions/campaigns'
 
-const QUICK_TOKENS = ['first_name', 'last_name', 'company', 'role', 'email']
+const LEAD_QUICK_TOKENS = ['first_name', 'last_name', 'company', 'role', 'email']
+
+const SENDER_TOKENS = [
+  'sender_first_name',
+  'sender_last_name',
+  'sender_name',
+  'sender_email',
+  'sender_role',
+  'sender_phone',
+  'sender_signature',
+]
 
 interface Props {
   steps: SaveStepInput[]
@@ -16,7 +26,7 @@ interface Props {
 export function StepEditor({ steps, onChange, disabled, availableTokens = [] }: Props) {
   const [expandedStep, setExpandedStep] = useState<number>(0)
 
-  const allTokens = Array.from(new Set([...QUICK_TOKENS, ...availableTokens]))
+  const leadTokens = Array.from(new Set([...LEAD_QUICK_TOKENS, ...availableTokens]))
 
   const addStep = () => {
     const newStep: SaveStepInput = {
@@ -152,34 +162,69 @@ export function StepEditor({ steps, onChange, disabled, availableTokens = [] }: 
                 )}
 
                 {/* Quick Token Inserter */}
-                <div className="space-y-1.5">
-                  <span className="text-[10px] text-zinc-500 font-medium">Insert variable:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {allTokens.map((tok) => (
-                      <div key={tok} className="flex">
-                        <button
-                          type="button"
-                          onClick={() => insertToken(index, 'subject_template', tok)}
-                          disabled={disabled}
-                          className="px-1.5 py-0.5 text-[10px] font-mono rounded-l bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-indigo-300 hover:border-indigo-500/40 transition-colors cursor-pointer"
-                          title="Insert into Subject"
-                        >
-                          S
-                        </button>
-                        <span className="px-2 py-0.5 text-[10px] font-mono bg-zinc-900 border-y border-zinc-700 text-zinc-300">
-                          {`{{${tok}}}`}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => insertToken(index, 'body_template', tok)}
-                          disabled={disabled}
-                          className="px-1.5 py-0.5 text-[10px] font-mono rounded-r bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-indigo-300 hover:border-indigo-500/40 transition-colors cursor-pointer"
-                          title="Insert into Body"
-                        >
-                          B
-                        </button>
-                      </div>
-                    ))}
+                <div className="space-y-2">
+                  {/* Lead Variables */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-zinc-500 font-medium">Lead variables:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {leadTokens.map((tok) => (
+                        <div key={tok} className="flex">
+                          <button
+                            type="button"
+                            onClick={() => insertToken(index, 'subject_template', tok)}
+                            disabled={disabled}
+                            className="px-1.5 py-0.5 text-[10px] font-mono rounded-l bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-indigo-300 hover:border-indigo-500/40 transition-colors cursor-pointer"
+                            title="Insert into Subject"
+                          >
+                            S
+                          </button>
+                          <span className="px-2 py-0.5 text-[10px] font-mono bg-zinc-900 border-y border-zinc-700 text-zinc-300">
+                            {`{{${tok}}}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => insertToken(index, 'body_template', tok)}
+                            disabled={disabled}
+                            className="px-1.5 py-0.5 text-[10px] font-mono rounded-r bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-indigo-300 hover:border-indigo-500/40 transition-colors cursor-pointer"
+                            title="Insert into Body"
+                          >
+                            B
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sender / Inbox Variables */}
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-indigo-400/70 font-medium">Sender variables:</span>
+                    <div className="flex flex-wrap gap-1">
+                      {SENDER_TOKENS.map((tok) => (
+                        <div key={tok} className="flex">
+                          <button
+                            type="button"
+                            onClick={() => insertToken(index, 'subject_template', tok)}
+                            disabled={disabled}
+                            className="px-1.5 py-0.5 text-[10px] font-mono rounded-l bg-indigo-950/60 border border-indigo-500/20 text-indigo-400/70 hover:text-indigo-300 hover:border-indigo-500/50 transition-colors cursor-pointer"
+                            title="Insert into Subject"
+                          >
+                            S
+                          </button>
+                          <span className="px-2 py-0.5 text-[10px] font-mono bg-indigo-950/30 border-y border-indigo-500/20 text-indigo-300/80">
+                            {`{{${tok}}}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => insertToken(index, 'body_template', tok)}
+                            disabled={disabled}
+                            className="px-1.5 py-0.5 text-[10px] font-mono rounded-r bg-indigo-950/60 border border-indigo-500/20 text-indigo-400/70 hover:text-indigo-300 hover:border-indigo-500/50 transition-colors cursor-pointer"
+                            title="Insert into Body"
+                          >
+                            B
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 

@@ -16,7 +16,10 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
-  Send
+  Send,
+  User,
+  Plus,
+  X as XIcon,
 } from 'lucide-react'
 import {
   updateInboxSettings,
@@ -42,16 +45,30 @@ export function InboxCard({ inbox }: InboxCardProps) {
   } | null>(null)
   const [showErrorDetails, setShowErrorDetails] = useState(false)
 
-  // Local editable states
+  // Local editable states — rate limits
   const [dailyLimit, setDailyLimit] = useState(inbox.daily_send_limit)
   const [minSeconds, setMinSeconds] = useState(inbox.min_seconds_between_sends)
   const [isActive, setIsActive] = useState(inbox.is_active)
   const [saveIndicator, setSaveIndicator] = useState<string | null>(null)
 
+  // Sender profile state
+  const [showProfile, setShowProfile] = useState(false)
+  const [firstName, setFirstName] = useState(inbox.first_name ?? '')
+  const [lastName, setLastName] = useState(inbox.last_name ?? '')
+  const [role, setRole] = useState(inbox.role ?? '')
+  const [phone, setPhone] = useState(inbox.phone_number ?? '')
+  const [signature, setSignature] = useState(inbox.signature ?? '')
+  // Custom variables: array of {key, value} pairs
+  const [customVars, setCustomVars] = useState<{ key: string; value: string }[]>(
+    Object.entries(inbox.variables ?? {}).map(([key, value]) => ({ key, value }))
+  )
+
   const showSaveSuccess = (text: string) => {
     setSaveIndicator(text)
     setTimeout(() => setSaveIndicator(null), 2000)
   }
+
+  // ── Rate limit handlers ───────────────────────────────────────────────────
 
   // Handle active/inactive toggle
   const handleToggleActive = () => {
@@ -86,6 +103,60 @@ export function InboxCard({ inbox }: InboxCardProps) {
         showSaveSuccess('Spacing cooldown saved')
       }
     })
+  }
+
+  // ── Sender profile handlers ───────────────────────────────────────────────
+
+  const saveProfileField = (field: {
+    first_name?: string | null
+    last_name?: string | null
+    role?: string | null
+    phone_number?: string | null
+    signature?: string | null
+  }) => {
+    startTransition(async () => {
+      const res = await updateInboxSettings(inbox.id, field)
+      if (res.success) showSaveSuccess('Profile saved')
+    })
+  }
+
+  const saveCustomVars = (vars: { key: string; value: string }[]) => {
+    // Deduplicate and filter blank keys before saving
+    const cleaned: Record<string, string> = {}
+    for (const { key, value } of vars) {
+      const k = key.trim()
+      if (k && /^\w+$/.test(k)) cleaned[k] = value
+    }
+    startTransition(async () => {
+      const res = await updateInboxSettings(inbox.id, { variables: cleaned })
+      if (res.success) showSaveSuccess('Variables saved')
+    })
+  }
+
+  const handleAddCustomVar = () => {
+    setCustomVars((prev) => [...prev, { key: '', value: '' }])
+  }
+
+  const handleCustomVarChange = (
+    idx: number,
+    field: 'key' | 'value',
+    val: string
+  ) => {
+    setCustomVars((prev) => {
+      const next = [...prev]
+      next[idx] = { ...next[idx], [field]: val }
+      return next
+    })
+  }
+
+  const handleCustomVarBlur = () => {
+    saveCustomVars(customVars)
+  }
+
+  const handleCustomVarDelete = (idx: number) => {
+    const next = customVars.filter((_, i) => i !== idx)
+    setCustomVars(next)
+    saveCustomVars(next)
   }
 
   // Handle re-testing connection
@@ -131,23 +202,25 @@ export function InboxCard({ inbox }: InboxCardProps) {
 
   return (
     <div
-      className={`rounded-2xl border transition-all duration-200 overflow-hidden ${isStatusError
-        ? 'bg-zinc-950 border-rose-500/30 shadow-lg shadow-rose-950/20'
-        : isStatusActive
+      className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+        isStatusError
+          ? 'bg-zinc-950 border-rose-500/30 shadow-lg shadow-rose-950/20'
+          : isStatusActive
           ? 'bg-zinc-950/80 border-zinc-800 hover:border-zinc-700 shadow-md'
           : 'bg-zinc-950/40 border-zinc-800/60 opacity-85'
-        }`}
+      }`}
     >
       {/* Card Header & Controls */}
       <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/80">
         <div className="flex items-start gap-3.5">
           <div
-            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${isStatusError
-              ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-              : isStatusActive
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+              isStatusError
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                : isStatusActive
                 ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
                 : 'bg-zinc-900 border-zinc-800 text-zinc-500'
-              }`}
+            }`}
           >
             <Mail className="w-5 h-5" />
           </div>
@@ -176,15 +249,15 @@ export function InboxCard({ inbox }: InboxCardProps) {
                 </span>
               )}
 
-
               {/* Sends Today Quota Badge */}
               <span
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold border ${isLimitReached
-                  ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                  : sendPercent >= 80
+                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold border ${
+                  isLimitReached
+                    ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                    : sendPercent >= 80
                     ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                     : 'bg-zinc-900 text-zinc-300 border-zinc-800'
-                  }`}
+                }`}
                 title={`${sendsToday} emails sent today out of ${dailyLimit} limit (${sendPercent}%)`}
               >
                 <Send className="w-2.5 h-2.5 text-indigo-400" />
@@ -215,12 +288,14 @@ export function InboxCard({ inbox }: InboxCardProps) {
               aria-checked={isActive}
               onClick={handleToggleActive}
               disabled={isPending}
-              className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${isActive ? 'bg-indigo-600' : 'bg-zinc-800'
-                }`}
+              className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
+                isActive ? 'bg-indigo-600' : 'bg-zinc-800'
+              }`}
             >
               <div
-                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isActive ? 'translate-x-4' : 'translate-x-0'
-                  }`}
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                  isActive ? 'translate-x-4' : 'translate-x-0'
+                }`}
               />
             </button>
           </div>
@@ -294,12 +369,13 @@ export function InboxCard({ inbox }: InboxCardProps) {
           </div>
           <div className="w-full bg-zinc-950 border border-zinc-800/80 rounded-full h-1.5 overflow-hidden mt-1.5">
             <div
-              className={`h-full rounded-full transition-all ${isLimitReached
-                ? 'bg-rose-500'
-                : sendPercent >= 80
+              className={`h-full rounded-full transition-all ${
+                isLimitReached
+                  ? 'bg-rose-500'
+                  : sendPercent >= 80
                   ? 'bg-amber-400'
                   : 'bg-indigo-500'
-                }`}
+              }`}
               style={{ width: `${sendPercent}%` }}
             />
           </div>
@@ -345,6 +421,162 @@ export function InboxCard({ inbox }: InboxCardProps) {
         </div>
       </div>
 
+      {/* Sender Profile & Variables Section */}
+      <div className="border-t border-zinc-800/80">
+        <button
+          type="button"
+          onClick={() => setShowProfile((v) => !v)}
+          className="w-full px-5 py-3 flex items-center justify-between text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50 transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <User className="w-3.5 h-3.5 text-indigo-400" />
+            Sender Profile &amp; Variables
+          </span>
+          {showProfile ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+
+        {showProfile && (
+          <div className="px-5 pb-5 space-y-4 bg-zinc-900/20">
+            {/* Name Row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-zinc-400">First Name</label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  onBlur={() => saveProfileField({ first_name: firstName.trim() || null })}
+                  placeholder="e.g. Paul"
+                  disabled={isPending}
+                  className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-zinc-400">Last Name</label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  onBlur={() => saveProfileField({ last_name: lastName.trim() || null })}
+                  placeholder="e.g. Martin"
+                  disabled={isPending}
+                  className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Role & Phone Row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-zinc-400">Job Title / Role</label>
+                <input
+                  type="text"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  onBlur={() => saveProfileField({ role: role.trim() || null })}
+                  placeholder="e.g. Head of Sales"
+                  disabled={isPending}
+                  className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-zinc-400">Phone Number</label>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  onBlur={() => saveProfileField({ phone_number: phone.trim() || null })}
+                  placeholder="e.g. +1 555 123 4567"
+                  disabled={isPending}
+                  className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Signature */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-zinc-400 flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-indigo-400" />
+                Email Signature  <span className="text-zinc-600">(resolves <code className="font-mono">{'{{sender_signature}}'}</code>)</span>
+              </label>
+              <textarea
+                rows={3}
+                value={signature}
+                onChange={(e) => setSignature(e.target.value)}
+                onBlur={() => saveProfileField({ signature: signature.trim() || null })}
+                placeholder={`Best regards,\nPaul Martin\nHead of Sales`}
+                disabled={isPending}
+                className="w-full px-3 py-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none font-mono"
+              />
+            </div>
+
+            {/* Custom Variables */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-medium text-zinc-400">
+                  Custom Variables
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAddCustomVar}
+                  className="flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add variable
+                </button>
+              </div>
+
+              {customVars.length === 0 && (
+                <p className="text-[11px] text-zinc-600 italic">
+                  No custom variables. Add one to use tokens like <code className="font-mono">{'{{booking_link}}'}</code> in templates.
+                </p>
+              )}
+
+              <div className="space-y-1.5">
+                {customVars.map((cv, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={cv.key}
+                      onChange={(e) => handleCustomVarChange(idx, 'key', e.target.value)}
+                      onBlur={handleCustomVarBlur}
+                      placeholder="key (e.g. booking_link)"
+                      pattern="\w+"
+                      disabled={isPending}
+                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[11px] font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <span className="text-zinc-600 text-xs">→</span>
+                    <input
+                      type="text"
+                      value={cv.value}
+                      onChange={(e) => handleCustomVarChange(idx, 'value', e.target.value)}
+                      onBlur={handleCustomVarBlur}
+                      placeholder="value"
+                      disabled={isPending}
+                      className="flex-[2] px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[11px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCustomVarDelete(idx)}
+                      disabled={isPending}
+                      className="p-1 text-zinc-600 hover:text-rose-400 transition-colors"
+                    >
+                      <XIcon className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {customVars.length > 0 && (
+                <p className="text-[10px] text-zinc-600">
+                  Keys must be word characters only (letters, digits, underscores). Changes save on blur.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Save Success Notice */}
       {saveIndicator && (
         <div className="px-5 py-2 bg-emerald-500/10 border-t border-emerald-500/20 text-emerald-300 text-[11px] flex items-center gap-1.5">
@@ -356,10 +588,11 @@ export function InboxCard({ inbox }: InboxCardProps) {
       {/* Test Connection Live Result */}
       {testResult && (
         <div
-          className={`px-5 py-3 border-t text-xs flex items-center justify-between ${testResult.success
-            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-            : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-            }`}
+          className={`px-5 py-3 border-t text-xs flex items-center justify-between ${
+            testResult.success
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+              : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+          }`}
         >
           <div className="flex items-center gap-2">
             {testResult.success ? (

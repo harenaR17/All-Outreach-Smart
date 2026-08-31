@@ -31,6 +31,7 @@ export interface CreateCampaignInput {
   working_hours_start: string
   working_hours_end: string
   stop_on_auto_reply?: boolean
+  send_priority?: 'new_leads' | 'follow_ups'
   recipientIds?: string[]
 }
 
@@ -49,6 +50,7 @@ export interface SaveCampaignInput {
   working_hours_start: string
   working_hours_end: string
   stop_on_auto_reply?: boolean
+  send_priority?: 'new_leads' | 'follow_ups'
   steps: SaveStepInput[]
   inboxIds: string[]
   recipientIds?: string[]
@@ -180,6 +182,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
         working_hours_start: input.working_hours_start,
         working_hours_end: input.working_hours_end,
         stop_on_auto_reply: input.stop_on_auto_reply ?? true,
+        send_priority: input.send_priority ?? 'new_leads',
       })
       .select()
       .single()
@@ -214,6 +217,90 @@ export async function createTestCampaign(customName?: string): Promise<{
   })
 }
 
+export async function duplicateCampaign(sourceId: string): Promise<{
+  success: boolean
+  data?: Campaign
+  error?: string
+}> {
+  try {
+    const sourceResult = await getCampaignById(sourceId)
+    if (!sourceResult.success || !sourceResult.data) {
+      return { success: false, error: sourceResult.error || 'Campaign not found' }
+    }
+
+    const source = sourceResult.data
+    const supabase = supabaseAdmin()
+
+    const { data: newCampaign, error: campErr } = await supabase
+      .from('campaigns')
+      .insert({
+        name: `${source.name.trim()} (Copy)`,
+        status: 'draft',
+        timezone: source.timezone,
+        working_days: source.working_days,
+        working_hours_start: source.working_hours_start,
+        working_hours_end: source.working_hours_end,
+        stop_on_auto_reply: source.stop_on_auto_reply ?? true,
+        send_priority: source.send_priority ?? 'new_leads',
+      })
+      .select()
+      .single()
+
+    if (campErr || !newCampaign) {
+      return { success: false, error: campErr?.message || 'Failed to create duplicate campaign' }
+    }
+
+    const newId = newCampaign.id
+
+    if (source.steps.length > 0) {
+      const { error: stepsErr } = await supabase.from('campaign_steps').insert(
+        source.steps.map((s) => ({
+          campaign_id: newId,
+          step_order: s.step_order,
+          delay_days: s.delay_days,
+          subject_template: s.subject_template,
+          body_template: s.body_template,
+        }))
+      )
+      if (stepsErr) {
+        await supabase.from('campaigns').delete().eq('id', newId)
+        return { success: false, error: stepsErr.message }
+      }
+    }
+
+    if (source.inboxIds.length > 0) {
+      const { error: inboxErr } = await supabase.from('campaign_email_accounts').insert(
+        source.inboxIds.map((emailAccountId) => ({
+          campaign_id: newId,
+          email_account_id: emailAccountId,
+        }))
+      )
+      if (inboxErr) {
+        await supabase.from('campaigns').delete().eq('id', newId)
+        return { success: false, error: inboxErr.message }
+      }
+    }
+
+    if (source.recipientIds.length > 0) {
+      const { error: recipErr } = await supabase.from('campaign_telegram_recipients').insert(
+        source.recipientIds.map((recipientId) => ({
+          campaign_id: newId,
+          recipient_id: recipientId,
+        }))
+      )
+      if (recipErr) {
+        await supabase.from('campaigns').delete().eq('id', newId)
+        return { success: false, error: recipErr.message }
+      }
+    }
+
+    revalidatePath('/campaigns')
+    return { success: true, data: newCampaign as Campaign }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
 // ─── Save (settings + steps + inboxes + telegram recipients, no status change) ──
 
 export async function saveCampaign(
@@ -233,6 +320,7 @@ export async function saveCampaign(
         working_hours_start: input.working_hours_start,
         working_hours_end: input.working_hours_end,
         stop_on_auto_reply: input.stop_on_auto_reply ?? true,
+        send_priority: input.send_priority ?? 'new_leads',
       })
       .eq('id', id)
 
