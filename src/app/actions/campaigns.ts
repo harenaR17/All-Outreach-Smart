@@ -238,25 +238,49 @@ export async function saveCampaign(
 
     if (campErr) return { success: false, error: campErr.message }
 
-    // 2. Replace steps atomically: delete all then insert
-    const { error: delErr } = await supabase
+    // 2. Update steps non-destructively: update existing, insert new, delete removed only.
+    //    Blind delete-all would violate the sends.step_id FK if any email has been sent.
+    const { data: existingSteps } = await supabase
       .from('campaign_steps')
-      .delete()
+      .select('id')
       .eq('campaign_id', id)
 
-    if (delErr) return { success: false, error: delErr.message }
+    const existingIds = new Set((existingSteps || []).map((s) => s.id))
+    const keptIds = new Set(input.steps.filter((s) => s.id).map((s) => s.id!))
 
-    if (input.steps.length > 0) {
-      const { error: stepsErr } = await supabase.from('campaign_steps').insert(
-        input.steps.map((s, i) => ({
-          campaign_id: id,
-          step_order: i + 1,
-          delay_days: i === 0 ? 0 : s.delay_days,
-          subject_template: s.subject_template.trim(),
-          body_template: s.body_template.trim(),
-        }))
-      )
-      if (stepsErr) return { success: false, error: stepsErr.message }
+    // Delete only steps explicitly removed in the UI
+    const idsToDelete = [...existingIds].filter((stepId) => !keptIds.has(stepId))
+    if (idsToDelete.length > 0) {
+      const { error: delErr } = await supabase
+        .from('campaign_steps')
+        .delete()
+        .in('id', idsToDelete)
+      if (delErr) return { success: false, error: delErr.message }
+    }
+
+    // Update retained steps and insert new ones
+    for (let i = 0; i < input.steps.length; i++) {
+      const s = input.steps[i]
+      const stepData = {
+        campaign_id: id,
+        step_order: i + 1,
+        delay_days: i === 0 ? 0 : s.delay_days,
+        subject_template: s.subject_template.trim(),
+        body_template: s.body_template.trim(),
+      }
+
+      if (s.id && existingIds.has(s.id)) {
+        const { error: updateErr } = await supabase
+          .from('campaign_steps')
+          .update(stepData)
+          .eq('id', s.id)
+        if (updateErr) return { success: false, error: updateErr.message }
+      } else {
+        const { error: insertErr } = await supabase
+          .from('campaign_steps')
+          .insert(stepData)
+        if (insertErr) return { success: false, error: insertErr.message }
+      }
     }
 
     // 3. Replace inbox pool

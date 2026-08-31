@@ -325,6 +325,51 @@ SELECT cron.schedule(
   $$
 );`,
     },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 11: Fix FK constraints (00006_fix_fk_constraints.sql)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Fix FK constraints (allow inbox/step deletes with history)',
+      sql: `
+-- Fix 1: campaign_leads.email_account_id -> ON DELETE SET NULL
+ALTER TABLE campaign_leads
+  DROP CONSTRAINT IF EXISTS campaign_leads_email_account_id_fkey,
+  ADD CONSTRAINT campaign_leads_email_account_id_fkey
+    FOREIGN KEY (email_account_id)
+    REFERENCES email_accounts(id)
+    ON DELETE SET NULL;
+
+-- Fix 2: sends.step_id -> nullable + ON DELETE SET NULL
+ALTER TABLE sends
+  ALTER COLUMN step_id DROP NOT NULL;
+
+ALTER TABLE sends
+  DROP CONSTRAINT IF EXISTS sends_step_id_fkey,
+  ADD CONSTRAINT sends_step_id_fkey
+    FOREIGN KEY (step_id)
+    REFERENCES campaign_steps(id)
+    ON DELETE SET NULL;
+
+-- Fix 3: sends.email_account_id -> nullable + ON DELETE SET NULL
+ALTER TABLE sends
+  ALTER COLUMN email_account_id DROP NOT NULL;
+
+ALTER TABLE sends
+  DROP CONSTRAINT IF EXISTS sends_email_account_id_fkey,
+  ADD CONSTRAINT sends_email_account_id_fkey
+    FOREIGN KEY (email_account_id)
+    REFERENCES email_accounts(id)
+    ON DELETE SET NULL;
+
+-- Fix 4: lead_imports.campaign_id -> ON DELETE SET NULL
+ALTER TABLE lead_imports
+  DROP CONSTRAINT IF EXISTS lead_imports_campaign_id_fkey,
+  ADD CONSTRAINT lead_imports_campaign_id_fkey
+    FOREIGN KEY (campaign_id)
+    REFERENCES campaigns(id)
+    ON DELETE SET NULL;`,
+    },
   ]
 }
 
