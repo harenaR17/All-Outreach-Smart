@@ -152,8 +152,8 @@ export function CampaignStudio({
   )
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'leads',    label: `Leads (${campaignLeads.length || campaign.leadCount})`, icon: <Users className="w-3.5 h-3.5" /> },
-    { id: 'inboxes',  label: `Inboxes (${selectedInboxIds.length})`, icon: <Inbox className="w-3.5 h-3.5" /> },
+    { id: 'leads', label: `Leads (${campaignLeads.length || campaign.leadCount})`, icon: <Users className="w-3.5 h-3.5" /> },
+    { id: 'inboxes', label: `Inboxes (${selectedInboxIds.length})`, icon: <Inbox className="w-3.5 h-3.5" /> },
     { id: 'sequence', label: `Sequence (${campaign.steps.length})`, icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'schedule', label: 'Schedule', icon: <Settings className="w-3.5 h-3.5" /> },
     { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-3.5 h-3.5" /> },
@@ -189,11 +189,10 @@ export function CampaignStudio({
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-              activeTab === tab.id
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${activeTab === tab.id
                 ? 'bg-zinc-800 text-zinc-100 shadow-sm'
                 : 'text-zinc-400 hover:text-zinc-200'
-            }`}
+              }`}
           >
             {tab.icon}
             {tab.label}
@@ -296,11 +295,10 @@ export function CampaignStudio({
                   type="button"
                   onClick={() => toggleDay(d.value)}
                   disabled={isReadOnly}
-                  className={`flex-1 py-2 rounded-lg text-[11px] font-medium transition-all cursor-pointer disabled:cursor-not-allowed ${
-                    workingDays.includes(d.value)
+                  className={`flex-1 py-2 rounded-lg text-[11px] font-medium transition-all cursor-pointer disabled:cursor-not-allowed ${workingDays.includes(d.value)
                       ? 'bg-indigo-600 text-white border border-indigo-500'
                       : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:border-zinc-700'
-                  } disabled:opacity-60`}
+                    } disabled:opacity-60`}
                 >
                   {d.label}
                 </button>
@@ -367,11 +365,10 @@ export function CampaignStudio({
                 type="button"
                 onClick={() => !isReadOnly && setSendPriority('new_leads')}
                 disabled={isReadOnly}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  sendPriority === 'new_leads'
+                className={`p-3 rounded-xl border text-left transition-all ${sendPriority === 'new_leads'
                     ? 'bg-amber-500/10 border-amber-500/40 shadow-sm shadow-amber-950/20'
                     : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:border-zinc-700'
-                } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                  } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
               >
                 <div className="flex items-center justify-between">
                   <span className={`text-xs font-semibold ${sendPriority === 'new_leads' ? 'text-amber-200' : 'text-zinc-300'}`}>
@@ -388,11 +385,10 @@ export function CampaignStudio({
                 type="button"
                 onClick={() => !isReadOnly && setSendPriority('follow_ups')}
                 disabled={isReadOnly}
-                className={`p-3 rounded-xl border text-left transition-all ${
-                  sendPriority === 'follow_ups'
+                className={`p-3 rounded-xl border text-left transition-all ${sendPriority === 'follow_ups'
                     ? 'bg-indigo-500/10 border-indigo-500/40 shadow-sm shadow-indigo-950/20'
                     : 'bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:border-zinc-700'
-                } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                  } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
               >
                 <div className="flex items-center justify-between">
                   <span className={`text-xs font-semibold ${sendPriority === 'follow_ups' ? 'text-indigo-200' : 'text-zinc-300'}`}>
@@ -456,19 +452,17 @@ export function CampaignStudio({
                       type="button"
                       onClick={() => toggleRecipient(recip.id)}
                       disabled={isReadOnly}
-                      className={`w-full flex items-center justify-between p-2.5 rounded-lg border text-left transition-all ${
-                        isSelected
+                      className={`w-full flex items-center justify-between p-2.5 rounded-lg border text-left transition-all ${isSelected
                           ? 'bg-sky-950/30 border-sky-500/40 text-sky-200'
                           : 'bg-zinc-900/80 border-zinc-800/80 text-zinc-400 hover:border-zinc-700'
-                      } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                        } ${isReadOnly ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                     >
                       <div className="flex items-center gap-2.5">
                         <div
-                          className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                            isSelected
+                          className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected
                               ? 'bg-sky-600 border-sky-500 text-white'
                               : 'bg-zinc-800 border-zinc-700 text-transparent'
-                          }`}
+                            }`}
                         >
                           <Check className="w-3 h-3" />
                         </div>
@@ -482,11 +476,10 @@ export function CampaignStudio({
                         </div>
                       </div>
                       <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                          recip.is_active
+                        className={`text-[10px] px-1.5 py-0.5 rounded border ${recip.is_active
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                             : 'bg-zinc-800 text-zinc-500 border-zinc-700'
-                        }`}
+                          }`}
                       >
                         {recip.is_active ? 'Active' : 'Disabled'}
                       </span>
@@ -499,14 +492,6 @@ export function CampaignStudio({
                 No Telegram bots configured. Add bots in Settings to enable notifications.
               </p>
             )}
-          </div>
-
-          {/* Lead Stats */}
-          <div className="flex items-center gap-2 p-3.5 rounded-xl bg-zinc-900/60 border border-zinc-800">
-            <Users className="w-4 h-4 text-zinc-500" />
-            <span className="text-xs text-zinc-400">
-              <span className="text-zinc-200 font-medium">{campaign.leadCount}</span> leads attached to this campaign
-            </span>
           </div>
         </div>
       )}

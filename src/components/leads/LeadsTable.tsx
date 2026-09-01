@@ -24,7 +24,7 @@ import { formatDate } from '@/lib/utils'
 import { EditLeadModal } from './EditLeadModal'
 import { AssignCampaignModal } from './AssignCampaignModal'
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 10
 
 interface LeadsTableProps {
   initialLeads: Lead[]
@@ -169,41 +169,37 @@ export function LeadsTable({ initialLeads, campaigns }: LeadsTableProps) {
         <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-950 border border-zinc-800 overflow-x-auto">
           <button
             onClick={() => setStatusFilter('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              statusFilter === 'all'
-                ? 'bg-zinc-800 text-zinc-100 shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${statusFilter === 'all'
+              ? 'bg-zinc-800 text-zinc-100 shadow-sm'
+              : 'text-zinc-400 hover:text-zinc-200'
+              }`}
           >
             All ({counts.all})
           </button>
           <button
             onClick={() => setStatusFilter('active')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              statusFilter === 'active'
-                ? 'bg-emerald-500/20 text-emerald-300 font-semibold shadow-sm'
-                : 'text-zinc-400 hover:text-emerald-300'
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${statusFilter === 'active'
+              ? 'bg-emerald-500/20 text-emerald-300 font-semibold shadow-sm'
+              : 'text-zinc-400 hover:text-emerald-300'
+              }`}
           >
             Active ({counts.active})
           </button>
           <button
             onClick={() => setStatusFilter('do_not_contact')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              statusFilter === 'do_not_contact'
-                ? 'bg-amber-500/20 text-amber-300 font-semibold shadow-sm'
-                : 'text-zinc-400 hover:text-amber-300'
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${statusFilter === 'do_not_contact'
+              ? 'bg-amber-500/20 text-amber-300 font-semibold shadow-sm'
+              : 'text-zinc-400 hover:text-amber-300'
+              }`}
           >
             Do Not Contact ({counts.do_not_contact})
           </button>
           <button
             onClick={() => setStatusFilter('bounced')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              statusFilter === 'bounced'
-                ? 'bg-rose-500/20 text-rose-300 font-semibold shadow-sm'
-                : 'text-zinc-400 hover:text-rose-300'
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${statusFilter === 'bounced'
+              ? 'bg-rose-500/20 text-rose-300 font-semibold shadow-sm'
+              : 'text-zinc-400 hover:text-rose-300'
+              }`}
           >
             Bounced ({counts.bounced})
           </button>
@@ -267,6 +263,14 @@ export function LeadsTable({ initialLeads, campaigns }: LeadsTableProps) {
 
       {/* Leads Table */}
       <div className="rounded-2xl border border-zinc-800 overflow-hidden bg-zinc-950/60 shadow-xl">
+
+        <Pagination
+          currentPage={effectivePage}
+          totalItems={filteredLeads.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+          itemLabel="leads"
+        />
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-zinc-900/80 border-b border-zinc-800 text-zinc-400 font-medium">
@@ -299,9 +303,8 @@ export function LeadsTable({ initialLeads, campaigns }: LeadsTableProps) {
                   return (
                     <tr
                       key={lead.id}
-                      className={`hover:bg-zinc-900/30 transition-colors group ${
-                        isSelected ? 'bg-indigo-950/20' : ''
-                      }`}
+                      className={`hover:bg-zinc-900/30 transition-colors group ${isSelected ? 'bg-indigo-950/20' : ''
+                        }`}
                     >
                       {/* Checkbox */}
                       <td className="w-10 px-4 py-4 text-center">
