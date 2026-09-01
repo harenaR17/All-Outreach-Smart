@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Megaphone, Globe, Clock, Layers, Inbox, Users, ChevronRight, Pause, Play, Trash2, Copy, FolderOpen } from 'lucide-react'
+import { Megaphone, Globe, Clock, Layers, Inbox, Users, ChevronRight, Pause, Play, Trash2, Copy, FolderOpen, MessageSquare, ThumbsUp } from 'lucide-react'
 import type { CampaignWithMeta } from '@/app/actions/campaigns'
 
 const STATUS_STYLES: Record<string, { label: string; bg: string; text: string; dot: string }> = {
@@ -12,6 +12,10 @@ const STATUS_STYLES: Record<string, { label: string; bg: string; text: string; d
 }
 
 const DAY_NAMES = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function formatPercent(rate: number): string {
+  return `${(rate * 100).toFixed(1)}%`
+}
 
 interface Props {
   campaign: CampaignWithMeta
@@ -105,15 +109,42 @@ export function CampaignCard({ campaign, onDelete, onTogglePause, onDuplicate }:
           <FolderOpen className="w-4 h-4" />
         </div>
       </div>
-    </div >
+
+      {/* KPI Row */}
+      <div className="flex items-center gap-3 mt-2 pt-2 border-t border-zinc-800/60">
+        <Stat
+          icon={<MessageSquare className="w-3 h-3 text-indigo-400" />}
+          value={formatPercent(campaign.replyRate)}
+          label="reply rate"
+          valueClassName="text-indigo-300"
+        />
+        <Dot />
+        <Stat
+          icon={<ThumbsUp className="w-3 h-3 text-emerald-400" />}
+          value={formatPercent(campaign.positiveReplyRate)}
+          label="positive"
+          valueClassName="text-emerald-400"
+        />
+      </div>
+    </div>
   )
 }
 
-function Stat({ icon, value, label }: { icon: React.ReactNode; value: number; label: string }) {
+function Stat({
+  icon,
+  value,
+  label,
+  valueClassName = 'text-zinc-200',
+}: {
+  icon: React.ReactNode
+  value: React.ReactNode
+  label: string
+  valueClassName?: string
+}) {
   return (
     <span className="flex items-center gap-1 text-[11px] text-zinc-400">
       {icon}
-      <span className="text-zinc-200 font-medium">{value}</span>
+      <span className={`${valueClassName} font-medium`}>{value}</span>
       <span>{label}</span>
     </span>
   )
