@@ -1,5 +1,9 @@
 @AGENTS.md
 
+# This is the live production repo
+
+`All-Outreach-Smart` is the live, production deployment, running against its own Supabase database — separate from the `outreach-smart` staging repo. Changes are developed and approved in `outreach-smart` first, then ported over to this repo's `dev` branch and merged only with the repo owner's explicit approval. Never assume `outreach-smart`'s branch state or database reflects what's live here.
+
 # Delivery workflow
 
 This repo uses a `dev` integration branch. **`main` is never touched except by the repo owner's explicit approval** — no agent pushes to or merges into `main` under any circumstance.
