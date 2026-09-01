@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react'
 import {
-  Layers, Inbox, Settings, Globe, Clock, Users, Send, Check, Zap, BarChart3
+  Layers, Inbox, Settings, Globe, Clock, Users, Send, Check, Zap, BarChart3, Building2
 } from 'lucide-react'
 import type { CampaignDetail, SaveCampaignInput, SaveStepInput, CampaignLeadItem } from '@/app/actions/campaigns'
 import type { EmailAccount, Lead, Campaign, TelegramRecipient } from '@/lib/types/database'
@@ -69,6 +69,9 @@ export function CampaignStudio({
   const [hoursEnd, setHoursEnd] = useState(campaign.working_hours_end.slice(0, 5))
   const [stopOnAutoReply, setStopOnAutoReply] = useState(campaign.stop_on_auto_reply ?? true)
   const [sendPriority, setSendPriority] = useState<'new_leads' | 'follow_ups'>(campaign.send_priority ?? 'new_leads')
+  const [companyLimit, setCompanyLimit] = useState<string>(
+    campaign.limit_emails_per_company ? String(campaign.limit_emails_per_company) : ''
+  )
   const [steps, setSteps] = useState<SaveStepInput[]>(
     campaign.steps.map((s) => ({
       id: s.id,
@@ -90,6 +93,7 @@ export function CampaignStudio({
     hoursEnd: campaign.working_hours_end.slice(0, 5),
     stopOnAutoReply: campaign.stop_on_auto_reply ?? true,
     sendPriority: campaign.send_priority ?? 'new_leads',
+    companyLimit: campaign.limit_emails_per_company ? String(campaign.limit_emails_per_company) : '',
     steps: JSON.stringify(campaign.steps),
     inboxIds: JSON.stringify(campaign.inboxIds),
     recipientIds: JSON.stringify(campaign.recipientIds || []),
@@ -103,6 +107,7 @@ export function CampaignStudio({
     hoursEnd !== initialState.current.hoursEnd ||
     stopOnAutoReply !== initialState.current.stopOnAutoReply ||
     sendPriority !== initialState.current.sendPriority ||
+    companyLimit !== initialState.current.companyLimit ||
     JSON.stringify(steps) !== initialState.current.steps ||
     JSON.stringify(selectedInboxIds) !== initialState.current.inboxIds ||
     JSON.stringify(selectedRecipientIds) !== initialState.current.recipientIds
@@ -131,10 +136,11 @@ export function CampaignStudio({
     working_hours_end: `${hoursEnd}:00`,
     stop_on_auto_reply: stopOnAutoReply,
     send_priority: sendPriority,
+    limit_emails_per_company: companyLimit.trim() === '' ? null : Number(companyLimit),
     steps,
     inboxIds: selectedInboxIds,
     recipientIds: selectedRecipientIds,
-  }), [name, timezone, workingDays, hoursStart, hoursEnd, stopOnAutoReply, sendPriority, steps, selectedInboxIds, selectedRecipientIds])
+  }), [name, timezone, workingDays, hoursStart, hoursEnd, stopOnAutoReply, sendPriority, companyLimit, steps, selectedInboxIds, selectedRecipientIds])
 
   // Extract available tokens from campaign leads for the inserter
   const availableTokens = Array.from(
@@ -399,6 +405,28 @@ export function CampaignStudio({
                 </p>
               </button>
             </div>
+          </div>
+
+          {/* Limit Emails Per Company */}
+          <div className="space-y-2 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
+            <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
+              <Building2 className="w-3.5 h-3.5 text-blue-400" />
+              Limit Emails Per Company (per day)
+            </label>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Cap how many emails this campaign sends per day to leads sharing the same company (email domain). Leave empty or 0 for unlimited.
+            </p>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              inputMode="numeric"
+              value={companyLimit}
+              onChange={(e) => setCompanyLimit(e.target.value)}
+              disabled={isReadOnly}
+              placeholder="Unlimited"
+              className="w-full px-3.5 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+            />
           </div>
 
           {/* Telegram Notification Recipients */}
