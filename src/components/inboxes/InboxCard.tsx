@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Sparkles,
   Send,
   User,
@@ -201,8 +202,9 @@ export function InboxCard({ inbox }: InboxCardProps) {
   const isLimitReached = sendsToday >= dailyLimit
 
   return (
-    <div
-      className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+    <>
+      <div
+        className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
         isStatusError
           ? 'bg-zinc-950 border-rose-500/30 shadow-lg shadow-rose-950/20'
           : isStatusActive
@@ -343,7 +345,7 @@ export function InboxCard({ inbox }: InboxCardProps) {
       </div>
 
       {/* Editable Rate Limits & Timers Bar */}
-      <div className="px-5 py-4 bg-zinc-900/40 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center text-xs">
+      <div className="px-5 py-4 bg-zinc-900/40 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start text-xs">
         {/* Editable Daily Send Limit */}
         <div className="space-y-1">
           <label className="text-[11px] font-medium text-zinc-400 flex items-center justify-between">
@@ -402,6 +404,8 @@ export function InboxCard({ inbox }: InboxCardProps) {
               className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono font-semibold text-zinc-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
           </div>
+          {/* Invisible spacer to match Daily Limit cell's progress bar height, keeping inputs aligned */}
+          <div className="h-1.5 mt-1.5" />
         </div>
 
         {/* Last Send Activity */}
@@ -421,22 +425,109 @@ export function InboxCard({ inbox }: InboxCardProps) {
         </div>
       </div>
 
-      {/* Sender Profile & Variables Section */}
+      {/* Sender Profile & Variables Trigger */}
       <div className="border-t border-zinc-800/80">
         <button
           type="button"
-          onClick={() => setShowProfile((v) => !v)}
-          className="w-full px-5 py-3 flex items-center justify-between text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50 transition-colors"
+          onClick={() => setShowProfile(true)}
+          className="w-full px-5 py-3 flex items-center justify-between text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50 transition-colors cursor-pointer"
         >
           <span className="flex items-center gap-2">
             <User className="w-3.5 h-3.5 text-indigo-400" />
             Sender Profile &amp; Variables
           </span>
-          {showProfile ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          <ChevronRight className="w-3.5 h-3.5" />
         </button>
+      </div>
 
-        {showProfile && (
-          <div className="px-5 pb-5 space-y-4 bg-zinc-900/20">
+      {/* Save Success Notice */}
+      {saveIndicator && (
+        <div className="px-5 py-2 bg-emerald-500/10 border-t border-emerald-500/20 text-emerald-300 text-[11px] flex items-center gap-1.5">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          <span>{saveIndicator}</span>
+        </div>
+      )}
+
+      {/* Test Connection Live Result */}
+      {testResult && (
+        <div
+          className={`px-5 py-3 border-t text-xs flex items-center justify-between ${
+            testResult.success
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+              : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {testResult.success ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <ShieldAlert className="w-4 h-4 text-rose-400" />
+            )}
+            <span>
+              {testResult.success
+                ? testResult.isTestEmail
+                  ? `Confirmation test email sent successfully to ${inbox.email_address}! Check your Gmail inbox.`
+                  : 'Auth verified: Google Workspace delegation token is active and working.'
+                : testResult.error}
+            </span>
+          </div>
+          {!testResult.success && (
+            <button
+              onClick={() => setShowErrorDetails(!showErrorDetails)}
+              className="text-[11px] font-medium text-rose-400 hover:underline flex items-center gap-1"
+            >
+              <span>{showErrorDetails ? 'Hide Help' : 'View Fix'}</span>
+              {showErrorDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Error Message from Database or Verification */}
+      {(inbox.error_message || (testResult && !testResult.success)) && showErrorDetails && (
+        <div className="p-4 bg-rose-950/30 border-t border-rose-500/30 text-xs space-y-2">
+          <div className="text-rose-300 font-medium flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Diagnostic Trace:</span>
+          </div>
+          <p className="text-rose-200/90 font-mono text-[11px] pl-6">
+            {inbox.error_message || testResult?.error}
+          </p>
+          {testResult?.remediation && (
+            <div className="pl-6 pt-2 border-t border-rose-500/20 text-[11px] text-zinc-300">
+              <span className="font-semibold text-rose-200">How to fix:</span>
+              <p className="mt-0.5">{testResult.remediation}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+
+    {/* Sender Profile & Variables Modal */}
+    {showProfile && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          {/* Header */}
+          <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                <User className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-zinc-100">Sender Profile &amp; Variables</h2>
+                <p className="text-xs text-zinc-400 font-mono">{inbox.email_address}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowProfile(false)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 overflow-y-auto space-y-5 flex-1">
             {/* Name Row */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -574,70 +665,20 @@ export function InboxCard({ inbox }: InboxCardProps) {
               )}
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Save Success Notice */}
-      {saveIndicator && (
-        <div className="px-5 py-2 bg-emerald-500/10 border-t border-emerald-500/20 text-emerald-300 text-[11px] flex items-center gap-1.5">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span>{saveIndicator}</span>
-        </div>
-      )}
-
-      {/* Test Connection Live Result */}
-      {testResult && (
-        <div
-          className={`px-5 py-3 border-t text-xs flex items-center justify-between ${
-            testResult.success
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
-              : 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {testResult.success ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            ) : (
-              <ShieldAlert className="w-4 h-4 text-rose-400" />
-            )}
-            <span>
-              {testResult.success
-                ? testResult.isTestEmail
-                  ? `Confirmation test email sent successfully to ${inbox.email_address}! Check your Gmail inbox.`
-                  : 'Auth verified: Google Workspace delegation token is active and working.'
-                : testResult.error}
-            </span>
-          </div>
-          {!testResult.success && (
+          {/* Footer */}
+          <div className="p-4 px-6 border-t border-zinc-800 bg-zinc-900/40 flex items-center justify-end">
             <button
-              onClick={() => setShowErrorDetails(!showErrorDetails)}
-              className="text-[11px] font-medium text-rose-400 hover:underline flex items-center gap-1"
+              type="button"
+              onClick={() => setShowProfile(false)}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
             >
-              <span>{showErrorDetails ? 'Hide Help' : 'View Fix'}</span>
-              {showErrorDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              Done
             </button>
-          )}
-        </div>
-      )}
-
-      {/* Error Message from Database or Verification */}
-      {(inbox.error_message || (testResult && !testResult.success)) && showErrorDetails && (
-        <div className="p-4 bg-rose-950/30 border-t border-rose-500/30 text-xs space-y-2">
-          <div className="text-rose-300 font-medium flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>Diagnostic Trace:</span>
           </div>
-          <p className="text-rose-200/90 font-mono text-[11px] pl-6">
-            {inbox.error_message || testResult?.error}
-          </p>
-          {testResult?.remediation && (
-            <div className="pl-6 pt-2 border-t border-rose-500/20 text-[11px] text-zinc-300">
-              <span className="font-semibold text-rose-200">How to fix:</span>
-              <p className="mt-0.5">{testResult.remediation}</p>
-            </div>
-          )}
         </div>
-      )}
-    </div>
+      </div>
+    )}
+    </>
   )
 }

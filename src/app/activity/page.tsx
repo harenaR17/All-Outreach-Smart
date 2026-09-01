@@ -21,6 +21,7 @@ export default async function ActivityPage() {
     wrongPersonCount: 0,
     undefinedCount: 0,
     outOfOfficeCount: 0,
+    positiveReplyRate: 0,
   }
 
   const events = eventsRes.data || []

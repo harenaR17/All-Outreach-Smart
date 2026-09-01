@@ -7,6 +7,59 @@ const tokenCache = new Map<string, { token: string; expiresAt: number }>()
 // ─── Hard cap per invocation to stay within execution limits ────────────────
 const MAX_SENDS_PER_RUN = 1
 
+// ─── Free-mail domains, excluded from the per-company daily limit ────────────
+// Leads on these domains are consumer addresses, not colleagues at one company,
+// so each is treated as its own singleton group and is never limited by
+// campaigns.limit_emails_per_company.
+const FREE_MAIL_DOMAINS = new Set<string>([
+  // Google
+  'gmail.com', 'googlemail.com',
+  // Yahoo
+  'yahoo.com', 'yahoo.co.uk', 'yahoo.fr', 'yahoo.de', 'yahoo.es', 'yahoo.it',
+  'yahoo.ca', 'yahoo.com.au', 'yahoo.co.in', 'ymail.com', 'rocketmail.com',
+  // Microsoft
+  'outlook.com', 'outlook.fr', 'outlook.de', 'hotmail.com', 'hotmail.fr',
+  'hotmail.co.uk', 'hotmail.de', 'hotmail.it', 'hotmail.es', 'live.com',
+  'live.fr', 'live.co.uk', 'msn.com',
+  // Apple
+  'icloud.com', 'me.com', 'mac.com',
+  // AOL
+  'aol.com', 'aim.com',
+  // Privacy-focused / other global providers
+  'protonmail.com', 'proton.me', 'pm.me', 'tutanota.com', 'tuta.io',
+  'zoho.com', 'fastmail.com', 'hushmail.com', 'mail.com', 'email.com',
+  'gmx.com', 'gmx.net', 'gmx.de', 'gmx.fr', 'web.de', 't-online.de',
+  'yandex.com', 'yandex.ru', 'mail.ru', 'inbox.ru', 'bk.ru', 'list.ru',
+  'qq.com', '163.com', '126.com', 'sina.com', 'naver.com', 'daum.net',
+  // French ISPs (common consumer mailboxes in this product's market)
+  'free.fr', 'orange.fr', 'wanadoo.fr', 'laposte.net', 'sfr.fr', 'bbox.fr',
+  'neuf.fr', 'aliceadsl.fr', 'numericable.fr',
+  // North American ISPs
+  'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net', 'bellsouth.net',
+  'cox.net', 'charter.net', 'shaw.ca', 'rogers.com', 'sympatico.ca',
+  // UK / AU / other ISPs
+  'btinternet.com', 'sky.com', 'virginmedia.com', 'talktalk.net',
+  'bigpond.com', 'optusnet.com.au',
+])
+
+/**
+ * Company grouping key for the per-company daily limit.
+ *
+ * The key is the lead's email domain. Returns null when the lead must NOT be
+ * grouped — either the address is unusable, or the domain is a free-mail
+ * provider, in which case the lead is its own singleton group and is never
+ * throttled by this feature.
+ */
+function companyKeyForEmail(email: string | null | undefined): string | null {
+  if (!email) return null
+  const at = email.lastIndexOf('@')
+  if (at < 0) return null
+  const domain = email.slice(at + 1).trim().toLowerCase()
+  if (!domain || domain.includes('@')) return null
+  if (FREE_MAIL_DOMAINS.has(domain)) return null
+  return domain
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Campaign {
@@ -17,12 +70,21 @@ interface Campaign {
   working_days: number[]
   working_hours_start: string
   working_hours_end: string
+  send_priority?: 'new_leads' | 'follow_ups'
+  /** Max sends per day to leads of the same company. null / 0 = unlimited. */
+  limit_emails_per_company?: number | null
 }
 
 interface EmailAccount {
   id: string
   email_address: string
   display_name?: string | null
+  first_name?: string | null
+  last_name?: string | null
+  role?: string | null
+  phone_number?: string | null
+  signature?: string | null
+  variables?: Record<string, string> | null
   service_account_client_email: string
   service_account_private_key: string
   daily_send_limit: number
@@ -173,10 +235,16 @@ async function handleSender(req: NextRequest) {
           .limit(remaining),
       ])
 
-      const dueCampaignLeads: CampaignLead[] = [
-        ...((pendingRes.data ?? []) as unknown as CampaignLead[]),
-        ...((activeRes.data ?? []) as unknown as CampaignLead[]),
-      ]
+      const isFollowUpPriority = campaign.send_priority === 'follow_ups'
+      const dueCampaignLeads: CampaignLead[] = isFollowUpPriority
+        ? [
+            ...((activeRes.data ?? []) as unknown as CampaignLead[]),
+            ...((pendingRes.data ?? []) as unknown as CampaignLead[]),
+          ]
+        : [
+            ...((pendingRes.data ?? []) as unknown as CampaignLead[]),
+            ...((activeRes.data ?? []) as unknown as CampaignLead[]),
+          ]
 
       if (dueCampaignLeads.length === 0) continue
 
@@ -207,6 +275,31 @@ async function handleSender(req: NextRequest) {
       for (const row of sendRows ?? []) {
         const key = (row as { email_account_id: string }).email_account_id
         sendsToday.set(key, (sendsToday.get(key) ?? 0) + 1)
+      }
+
+      // 7b. Count campaign-only sends since UTC midnight per COMPANY for this
+      //     campaign. Mirrors the per-inbox `sendsToday` map above: built once
+      //     per run, checked in the lead loop, incremented after each send.
+      //     Only built when the campaign actually enables the limit.
+      const companyLimit = Math.max(0, Math.floor(campaign.limit_emails_per_company ?? 0))
+      const companySendsToday = new Map<string, number>()
+
+      if (companyLimit > 0) {
+        const { data: companySendRows } = await supabase
+          .from('sends')
+          .select('id, campaign_leads!inner(campaign_id, leads!inner(email))')
+          .eq('campaign_leads.campaign_id', campaign.id)
+          .eq('status', 'sent')
+          .gte('sent_at', todayUtcStart.toISOString())
+
+        for (const row of companySendRows ?? []) {
+          const email = (row as unknown as {
+            campaign_leads?: { leads?: { email?: string } | null } | null
+          }).campaign_leads?.leads?.email
+          const key = companyKeyForEmail(email)
+          if (!key) continue // free-mail / unusable address: never limited
+          companySendsToday.set(key, (companySendsToday.get(key) ?? 0) + 1)
+        }
       }
 
       // 8. Determine initially eligible inboxes
@@ -243,6 +336,17 @@ async function handleSender(req: NextRequest) {
         }
 
         const step = campaignSteps[cl.current_step]
+
+        // 9b. Per-company daily limit.
+        //     companyKey is null when the limit is off, the address is unusable,
+        //     or the lead is on a free-mail domain — all of which mean "never
+        //     limited". Otherwise skip (retry next cron run / next day) once the
+        //     company has hit its cap for today.
+        const leadCompanyKey = companyLimit > 0 ? companyKeyForEmail(lead.email) : null
+        if (leadCompanyKey && (companySendsToday.get(leadCompanyKey) ?? 0) >= companyLimit) {
+          results.skipped++
+          continue
+        }
 
         // 10. Pick inbox
         let assignedInbox: EmailAccount | null = null
@@ -298,16 +402,43 @@ async function handleSender(req: NextRequest) {
               : `Re: ${step1SubjectTemplate}`
           )
 
+        // Build inbox/sender variable map for template interpolation
+        const nameParts = (assignedInbox.display_name ?? '').trim().split(/\s+/)
+        const senderFirstName = assignedInbox.first_name?.trim() || nameParts[0] || ''
+        const senderLastName  = assignedInbox.last_name?.trim()  || nameParts.slice(1).join(' ') || ''
+        const senderFullName  = [senderFirstName, senderLastName].filter(Boolean).join(' ') || assignedInbox.display_name || ''
+        const senderSig       = assignedInbox.signature?.trim() ?? ''
+        const senderPhone     = assignedInbox.phone_number?.trim() ?? ''
+        const senderRole      = assignedInbox.role?.trim() ?? ''
+        const inboxVariables: Record<string, string> = {
+          sender_email:      assignedInbox.email_address,
+          sending_account_email: assignedInbox.email_address,
+          sender_name:       senderFullName,
+          sender_first_name: senderFirstName,
+          sending_account_first_name: senderFirstName,
+          sender_last_name:  senderLastName,
+          sending_account_last_name: senderLastName,
+          sender_role:       senderRole,
+          sender_phone:      senderPhone,
+          phone_number:      senderPhone,
+          sender_signature:  senderSig,
+          account_signature: senderSig,
+          signature:         senderSig,
+          ...(assignedInbox.variables ?? {}),
+        }
+
         const variables = (lead.variables ?? {}) as Record<string, unknown>
         const { rendered: subject, missing: missingSubj } = renderTemplate(
           effectiveSubjectTemplate,
           variables,
           lead.email,
+          inboxVariables,
         )
         const { rendered: body, missing: missingBody } = renderTemplate(
           step.body_template,
           variables,
           lead.email,
+          inboxVariables,
         )
         const allMissing = [...new Set([...missingSubj, ...missingBody])]
 
@@ -463,6 +594,15 @@ async function handleSender(req: NextRequest) {
           const newCount = todayCount + 1
           sendsToday.set(assignedInbox.id, newCount)
 
+          // Same for the per-company counter, so later leads in this same run
+          // see the company as already used up.
+          if (leadCompanyKey) {
+            companySendsToday.set(
+              leadCompanyKey,
+              (companySendsToday.get(leadCompanyKey) ?? 0) + 1,
+            )
+          }
+
           const inAll = allInboxes.find((i) => i.id === assignedInbox!.id)
           if (inAll) {
             inAll.next_available_at = nextAvailableAt
@@ -586,6 +726,7 @@ function renderTemplate(
   template: string,
   variables: Record<string, unknown>,
   email: string,
+  inboxVariables?: Record<string, string>,
 ): { rendered: string; missing: string[] } {
   const missing: string[] = []
   const seen = new Set<string>()
@@ -593,8 +734,13 @@ function renderTemplate(
   const rendered = template.replace(TOKEN_REGEX, (_, token: string) => {
     if (token === 'email') return email
 
+    // Lead variables take precedence
     const val = variables[token]
     if (val !== undefined && val !== null && val !== '') return String(val)
+
+    // Fall back to inbox variables
+    const inboxVal = inboxVariables?.[token]
+    if (inboxVal !== undefined && inboxVal !== '') return inboxVal
 
     if (!seen.has(token)) {
       missing.push(token)

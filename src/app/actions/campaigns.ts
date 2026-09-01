@@ -14,6 +14,10 @@ export interface CampaignWithMeta extends Campaign {
   stepCount: number
   inboxCount: number
   leadCount: number
+  /** Non-bounce replies / sent emails for this campaign, as a fraction (0–1). 0 when no sends yet. */
+  replyRate: number
+  /** Replies classified 'interested' / sent emails for this campaign, as a fraction (0–1). 0 when no sends yet. */
+  positiveReplyRate: number
 }
 
 export interface CampaignDetail extends Campaign {
@@ -32,6 +36,8 @@ export interface CreateCampaignInput {
   working_hours_end: string
   stop_on_auto_reply?: boolean
   send_priority?: 'new_leads' | 'follow_ups'
+  /** Max emails per day to leads of the same company (email domain). 0 / undefined = unlimited. */
+  limit_emails_per_company?: number | null
   recipientIds?: string[]
 }
 
@@ -51,9 +57,34 @@ export interface SaveCampaignInput {
   working_hours_end: string
   stop_on_auto_reply?: boolean
   send_priority?: 'new_leads' | 'follow_ups'
+  /** Max emails per day to leads of the same company (email domain). 0 / undefined = unlimited. */
+  limit_emails_per_company?: number | null
   steps: SaveStepInput[]
   inboxIds: string[]
   recipientIds?: string[]
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Normalises the per-company daily cap to a non-negative integer.
+ * null / undefined / NaN / negative all collapse to 0, which means "unlimited".
+ */
+function normalizeCompanyLimit(value: number | null | undefined): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
+}
+
+/**
+ * Normalises the per-company daily cap for campaign creation. Unlike
+ * normalizeCompanyLimit, an unset value (null/undefined) is left `undefined`
+ * so the caller can omit the column from the insert and let the DB default
+ * (2, as of migration 00010) apply instead of forcing 0 ("unlimited").
+ * An explicitly provided value (including 0) is respected as-is.
+ */
+function normalizeCompanyLimitForCreate(value: number | null | undefined): number | undefined {
+  if (value === null || value === undefined || !Number.isFinite(value)) return undefined
+  return Math.max(0, Math.floor(value))
 }
 
 // ─── List ────────────────────────────────────────────────────────────────────
@@ -78,7 +109,7 @@ export async function getCampaigns(): Promise<{
     // Fetch counts in parallel
     const withMeta = await Promise.all(
       campaigns.map(async (camp) => {
-        const [stepsRes, inboxRes, leadRes] = await Promise.all([
+        const [stepsRes, inboxRes, leadRes, sentRes, replyRes, positiveReplyRes] = await Promise.all([
           supabase
             .from('campaign_steps')
             .select('id', { count: 'exact', head: true })
@@ -91,13 +122,37 @@ export async function getCampaigns(): Promise<{
             .from('campaign_leads')
             .select('id', { count: 'exact', head: true })
             .eq('campaign_id', camp.id),
+          supabase
+            .from('sends')
+            .select('id, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+            .eq('campaign_leads.campaign_id', camp.id)
+            .eq('status', 'sent'),
+          // "Reply" = any non-bounce reply (real or auto), matching the site-wide
+          // reply-rate definition used in the Activity summary stats.
+          supabase
+            .from('replies')
+            .select('id, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+            .eq('campaign_leads.campaign_id', camp.id)
+            .neq('classification', 'bounce'),
+          // "Positive reply" = replies the LLM classified as 'interested'.
+          supabase
+            .from('replies')
+            .select('id, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+            .eq('campaign_leads.campaign_id', camp.id)
+            .eq('llm_category', 'interested'),
         ])
+
+        const sentCount = sentRes.count ?? 0
+        const replyCount = replyRes.count ?? 0
+        const positiveReplyCount = positiveReplyRes.count ?? 0
 
         return {
           ...camp,
           stepCount: stepsRes.count ?? 0,
           inboxCount: inboxRes.count ?? 0,
           leadCount: leadRes.count ?? 0,
+          replyRate: sentCount > 0 ? replyCount / sentCount : 0,
+          positiveReplyRate: sentCount > 0 ? positiveReplyCount / sentCount : 0,
         } satisfies CampaignWithMeta
       })
     )
@@ -172,6 +227,10 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
 }> {
   try {
     const supabase = supabaseAdmin()
+    // Leave limit_emails_per_company unset when the caller didn't provide a
+    // value, so the DB column default (2) applies instead of forcing 0
+    // ("unlimited"). If the caller did provide a value, respect it as-is.
+    const limitEmailsPerCompany = normalizeCompanyLimitForCreate(input.limit_emails_per_company)
     const { data, error } = await supabase
       .from('campaigns')
       .insert({
@@ -183,6 +242,9 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
         working_hours_end: input.working_hours_end,
         stop_on_auto_reply: input.stop_on_auto_reply ?? true,
         send_priority: input.send_priority ?? 'new_leads',
+        ...(limitEmailsPerCompany !== undefined
+          ? { limit_emails_per_company: limitEmailsPerCompany }
+          : {}),
       })
       .select()
       .single()
@@ -242,6 +304,7 @@ export async function duplicateCampaign(sourceId: string): Promise<{
         working_hours_end: source.working_hours_end,
         stop_on_auto_reply: source.stop_on_auto_reply ?? true,
         send_priority: source.send_priority ?? 'new_leads',
+        limit_emails_per_company: normalizeCompanyLimit(source.limit_emails_per_company),
       })
       .select()
       .single()
@@ -321,6 +384,7 @@ export async function saveCampaign(
         working_hours_end: input.working_hours_end,
         stop_on_auto_reply: input.stop_on_auto_reply ?? true,
         send_priority: input.send_priority ?? 'new_leads',
+        limit_emails_per_company: normalizeCompanyLimit(input.limit_emails_per_company),
       })
       .eq('id', id)
 

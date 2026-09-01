@@ -18,6 +18,59 @@ const tokenCache = new Map<string, { token: string; expiresAt: number }>()
 // ─── Hard cap per invocation to stay within edge function timeout ────────────
 const MAX_SENDS_PER_RUN = 1
 
+// ─── Free-mail domains, excluded from the per-company daily limit ────────────
+// Leads on these domains are consumer addresses, not colleagues at one company,
+// so each is treated as its own singleton group and is never limited by
+// campaigns.limit_emails_per_company.
+const FREE_MAIL_DOMAINS = new Set<string>([
+  // Google
+  'gmail.com', 'googlemail.com',
+  // Yahoo
+  'yahoo.com', 'yahoo.co.uk', 'yahoo.fr', 'yahoo.de', 'yahoo.es', 'yahoo.it',
+  'yahoo.ca', 'yahoo.com.au', 'yahoo.co.in', 'ymail.com', 'rocketmail.com',
+  // Microsoft
+  'outlook.com', 'outlook.fr', 'outlook.de', 'hotmail.com', 'hotmail.fr',
+  'hotmail.co.uk', 'hotmail.de', 'hotmail.it', 'hotmail.es', 'live.com',
+  'live.fr', 'live.co.uk', 'msn.com',
+  // Apple
+  'icloud.com', 'me.com', 'mac.com',
+  // AOL
+  'aol.com', 'aim.com',
+  // Privacy-focused / other global providers
+  'protonmail.com', 'proton.me', 'pm.me', 'tutanota.com', 'tuta.io',
+  'zoho.com', 'fastmail.com', 'hushmail.com', 'mail.com', 'email.com',
+  'gmx.com', 'gmx.net', 'gmx.de', 'gmx.fr', 'web.de', 't-online.de',
+  'yandex.com', 'yandex.ru', 'mail.ru', 'inbox.ru', 'bk.ru', 'list.ru',
+  'qq.com', '163.com', '126.com', 'sina.com', 'naver.com', 'daum.net',
+  // French ISPs (common consumer mailboxes in this product's market)
+  'free.fr', 'orange.fr', 'wanadoo.fr', 'laposte.net', 'sfr.fr', 'bbox.fr',
+  'neuf.fr', 'aliceadsl.fr', 'numericable.fr',
+  // North American ISPs
+  'comcast.net', 'verizon.net', 'att.net', 'sbcglobal.net', 'bellsouth.net',
+  'cox.net', 'charter.net', 'shaw.ca', 'rogers.com', 'sympatico.ca',
+  // UK / AU / other ISPs
+  'btinternet.com', 'sky.com', 'virginmedia.com', 'talktalk.net',
+  'bigpond.com', 'optusnet.com.au',
+])
+
+/**
+ * Company grouping key for the per-company daily limit.
+ *
+ * The key is the lead's email domain. Returns null when the lead must NOT be
+ * grouped — either the address is unusable, or the domain is a free-mail
+ * provider, in which case the lead is its own singleton group and is never
+ * throttled by this feature.
+ */
+function companyKeyForEmail(email: string | null | undefined): string | null {
+  if (!email) return null
+  const at = email.lastIndexOf('@')
+  if (at < 0) return null
+  const domain = email.slice(at + 1).trim().toLowerCase()
+  if (!domain || domain.includes('@')) return null
+  if (FREE_MAIL_DOMAINS.has(domain)) return null
+  return domain
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Campaign {
@@ -29,6 +82,8 @@ interface Campaign {
   working_hours_start: string
   working_hours_end: string
   send_priority?: 'new_leads' | 'follow_ups'
+  /** Max sends per day to leads of the same company. null / 0 = unlimited. */
+  limit_emails_per_company?: number | null
 }
 
 interface EmailAccount {
@@ -201,6 +256,31 @@ Deno.serve(async (req: Request) => {
         sendsToday.set(key, (sendsToday.get(key) ?? 0) + 1)
       }
 
+      // 7b. Count campaign-only sends since UTC midnight per COMPANY for this
+      //     campaign. Mirrors the per-inbox `sendsToday` map above: built once
+      //     per run, checked in the lead loop, incremented after each send.
+      //     Only built when the campaign actually enables the limit.
+      const companyLimit = Math.max(0, Math.floor(campaign.limit_emails_per_company ?? 0))
+      const companySendsToday = new Map<string, number>()
+
+      if (companyLimit > 0) {
+        const { data: companySendRows } = await supabase
+          .from('sends')
+          .select('id, campaign_leads!inner(campaign_id, leads!inner(email))')
+          .eq('campaign_leads.campaign_id', campaign.id)
+          .eq('status', 'sent')
+          .gte('sent_at', todayUtcStart.toISOString())
+
+        for (const row of companySendRows ?? []) {
+          const email = (row as unknown as {
+            campaign_leads?: { leads?: { email?: string } | null } | null
+          }).campaign_leads?.leads?.email
+          const key = companyKeyForEmail(email)
+          if (!key) continue // free-mail / unusable address: never limited
+          companySendsToday.set(key, (companySendsToday.get(key) ?? 0) + 1)
+        }
+      }
+
       // 8. Determine initially eligible inboxes
       const now = new Date()
       const eligibleInboxes: EmailAccount[] = allInboxes.filter((inbox) =>
@@ -235,6 +315,17 @@ Deno.serve(async (req: Request) => {
         }
 
         const step = campaignSteps[cl.current_step]
+
+        // 9b. Per-company daily limit.
+        //     companyKey is null when the limit is off, the address is unusable,
+        //     or the lead is on a free-mail domain — all of which mean "never
+        //     limited". Otherwise skip (retry next cron run / next day) once the
+        //     company has hit its cap for today.
+        const leadCompanyKey = companyLimit > 0 ? companyKeyForEmail(lead.email) : null
+        if (leadCompanyKey && (companySendsToday.get(leadCompanyKey) ?? 0) >= companyLimit) {
+          results.skipped++
+          continue
+        }
 
         // 10. Pick inbox
         let assignedInbox: EmailAccount | null = null
@@ -494,6 +585,15 @@ Deno.serve(async (req: Request) => {
           const todayCount = sendsToday.get(assignedInbox.id) ?? 0
           const newCount = todayCount + 1
           sendsToday.set(assignedInbox.id, newCount)
+
+          // Same for the per-company counter, so later leads in this same run
+          // see the company as already used up.
+          if (leadCompanyKey) {
+            companySendsToday.set(
+              leadCompanyKey,
+              (companySendsToday.get(leadCompanyKey) ?? 0) + 1,
+            )
+          }
 
           // Keep in-memory allInboxes updated
           const inAll = allInboxes.find((i) => i.id === assignedInbox!.id)

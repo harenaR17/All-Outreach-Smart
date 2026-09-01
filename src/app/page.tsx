@@ -81,6 +81,7 @@ export default async function DashboardPage() {
     wrongPersonCount: 0,
     undefinedCount: 0,
     outOfOfficeCount: 0,
+    positiveReplyRate: 0,
   }
   const recentReplies = recentActivityRes.data || []
 

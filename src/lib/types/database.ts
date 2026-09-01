@@ -174,6 +174,7 @@ export type Database = {
           working_hours_start: string
           stop_on_auto_reply: boolean
           send_priority: "new_leads" | "follow_ups"
+          limit_emails_per_company: number | null
         }
         Insert: {
           created_at?: string
@@ -186,6 +187,7 @@ export type Database = {
           working_hours_start?: string
           stop_on_auto_reply?: boolean
           send_priority?: "new_leads" | "follow_ups"
+          limit_emails_per_company?: number | null
         }
         Update: {
           created_at?: string
@@ -198,6 +200,7 @@ export type Database = {
           working_hours_start?: string
           stop_on_auto_reply?: boolean
           send_priority?: "new_leads" | "follow_ups"
+          limit_emails_per_company?: number | null
         }
         Relationships: []
       }
