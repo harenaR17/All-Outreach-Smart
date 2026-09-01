@@ -6,8 +6,9 @@ import { CampaignLeadItem, updateCampaignLeadState, removeLeadFromCampaign } fro
 import { formatDate } from '@/lib/utils'
 import { ImportLeadsModal } from '@/components/leads/ImportLeadsModal'
 import { AddLeadModal } from '@/components/leads/AddLeadModal'
+import { EditLeadModal } from '@/components/leads/EditLeadModal'
 import { Pagination } from '@/components/shared/Pagination'
-import type { Campaign } from '@/lib/types/database'
+import type { Campaign, Lead } from '@/lib/types/database'
 import {
   Users,
   Search,
@@ -28,8 +29,23 @@ import {
   UploadCloud,
   UserPlus,
   FileSpreadsheet,
-  Plus
+  Plus,
+  Edit3
 } from 'lucide-react'
+
+// Map a campaign-scoped lead row to the global Lead shape EditLeadModal expects.
+function toLead(item: CampaignLeadItem): Lead {
+  return {
+    id: item.lead_id,
+    email: item.email,
+    status: item.lead_status as Lead['status'],
+    status_reason: item.lead_status_reason,
+    variables: item.variables,
+    created_at: '',
+    imported_via: null,
+    status_changed_at: null,
+  }
+}
 
 interface Props {
   leads: CampaignLeadItem[]
@@ -85,6 +101,7 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
   // Modals
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false)
+  const [editingLead, setEditingLead] = useState<Lead | null>(null)
 
   const filteredLeads = useMemo(() => {
     return leads.filter((item) => {
@@ -433,6 +450,16 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
                           ) : (
                             <>
+                              {/* Edit Lead */}
+                              <button
+                                onClick={() => setEditingLead(toLead(item))}
+                                disabled={isPending}
+                                title="Edit contact details & variables"
+                                className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+
                               {/* Pause / Resume */}
                               {item.status === 'paused' ? (
                                 <button
@@ -565,6 +592,17 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
         defaultCampaignId={campaignId}
         onLeadCreated={() => router.refresh()}
       />
+
+      {/* Edit Lead Modal */}
+      {editingLead && (
+        <EditLeadModal
+          lead={editingLead}
+          isOpen={!!editingLead}
+          onClose={() => setEditingLead(null)}
+          campaigns={campaigns}
+          onLeadUpdated={() => router.refresh()}
+        />
+      )}
     </div>
   )
 }
