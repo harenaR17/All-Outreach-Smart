@@ -36,6 +36,8 @@ export interface CreateCampaignInput {
   working_hours_end: string
   stop_on_auto_reply?: boolean
   send_priority?: 'new_leads' | 'follow_ups'
+  /** Max emails per day to leads of the same company (email domain). 0 / undefined = unlimited. */
+  limit_emails_per_company?: number | null
   recipientIds?: string[]
 }
 
@@ -55,9 +57,22 @@ export interface SaveCampaignInput {
   working_hours_end: string
   stop_on_auto_reply?: boolean
   send_priority?: 'new_leads' | 'follow_ups'
+  /** Max emails per day to leads of the same company (email domain). 0 / undefined = unlimited. */
+  limit_emails_per_company?: number | null
   steps: SaveStepInput[]
   inboxIds: string[]
   recipientIds?: string[]
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Normalises the per-company daily cap to a non-negative integer.
+ * null / undefined / NaN / negative all collapse to 0, which means "unlimited".
+ */
+function normalizeCompanyLimit(value: number | null | undefined): number {
+  if (value === null || value === undefined || !Number.isFinite(value)) return 0
+  return Math.max(0, Math.floor(value))
 }
 
 // ─── List ────────────────────────────────────────────────────────────────────
@@ -211,6 +226,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
         working_hours_end: input.working_hours_end,
         stop_on_auto_reply: input.stop_on_auto_reply ?? true,
         send_priority: input.send_priority ?? 'new_leads',
+        limit_emails_per_company: normalizeCompanyLimit(input.limit_emails_per_company),
       })
       .select()
       .single()
@@ -270,6 +286,7 @@ export async function duplicateCampaign(sourceId: string): Promise<{
         working_hours_end: source.working_hours_end,
         stop_on_auto_reply: source.stop_on_auto_reply ?? true,
         send_priority: source.send_priority ?? 'new_leads',
+        limit_emails_per_company: normalizeCompanyLimit(source.limit_emails_per_company),
       })
       .select()
       .single()
@@ -349,6 +366,7 @@ export async function saveCampaign(
         working_hours_end: input.working_hours_end,
         stop_on_auto_reply: input.stop_on_auto_reply ?? true,
         send_priority: input.send_priority ?? 'new_leads',
+        limit_emails_per_company: normalizeCompanyLimit(input.limit_emails_per_company),
       })
       .eq('id', id)
 
