@@ -31,9 +31,15 @@ export interface ActivitySummaryStats {
   wrongPersonCount: number
   undefinedCount: number
   outOfOfficeCount: number
+  /** interestedCount / totalSends, same ratio convention as replyRate (totalReplies / totalSends) in ActivityFeed.tsx. 0 when totalSends is 0. */
+  positiveReplyRate: number
 }
 
-export async function getActivitySummaryStats(): Promise<{
+/**
+ * Aggregate send/reply KPIs. Pass `campaignId` to scope every count to a single
+ * campaign (via the campaign_leads join); omit it for the global, all-campaigns view.
+ */
+export async function getActivitySummaryStats(campaignId?: string): Promise<{
   success: boolean
   data?: ActivitySummaryStats
   error?: string
@@ -45,23 +51,37 @@ export async function getActivitySummaryStats(): Promise<{
     todayStart.setUTCHours(0, 0, 0, 0)
     const todayIso = todayStart.toISOString()
 
+    // sends/replies don't carry campaign_id directly - it lives on campaign_leads,
+    // so scoping to a campaign requires an inner join through campaign_leads.
+    let sendsTodayQuery = supabase
+      .from('sends')
+      .select('*, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+      .eq('status', 'sent')
+      .gte('sent_at', todayIso)
+    let totalSendsQuery = supabase
+      .from('sends')
+      .select('*, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+      .eq('status', 'sent')
+    let failedSendsQuery = supabase
+      .from('sends')
+      .select('*, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+      .eq('status', 'failed')
+    let repliesQuery = supabase
+      .from('replies')
+      .select('classification, llm_category, campaign_leads!inner(campaign_id)')
+
+    if (campaignId) {
+      sendsTodayQuery = sendsTodayQuery.eq('campaign_leads.campaign_id', campaignId)
+      totalSendsQuery = totalSendsQuery.eq('campaign_leads.campaign_id', campaignId)
+      failedSendsQuery = failedSendsQuery.eq('campaign_leads.campaign_id', campaignId)
+      repliesQuery = repliesQuery.eq('campaign_leads.campaign_id', campaignId)
+    }
+
     const [sendsTodayRes, totalSendsRes, failedSendsRes, repliesRes] = await Promise.all([
-      supabase
-        .from('sends')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'sent')
-        .gte('sent_at', todayIso),
-      supabase
-        .from('sends')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'sent'),
-      supabase
-        .from('sends')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'failed'),
-      supabase
-        .from('replies')
-        .select('classification, llm_category'),
+      sendsTodayQuery,
+      totalSendsQuery,
+      failedSendsQuery,
+      repliesQuery,
     ])
 
     const replies = repliesRes.data || []
@@ -87,11 +107,13 @@ export async function getActivitySummaryStats(): Promise<{
       else if (r.llm_category === 'out_of_office') outOfOfficeCount++
     }
 
+    const totalSends = totalSendsRes.count || 0
+
     return {
       success: true,
       data: {
         sendsToday: sendsTodayRes.count || 0,
-        totalSends: totalSendsRes.count || 0,
+        totalSends,
         failedSends: failedSendsRes.count || 0,
         totalReplies,
         totalBounces,
@@ -100,6 +122,7 @@ export async function getActivitySummaryStats(): Promise<{
         wrongPersonCount,
         undefinedCount,
         outOfOfficeCount,
+        positiveReplyRate: totalSends > 0 ? interestedCount / totalSends : 0,
       },
     }
   } catch (err: unknown) {
@@ -137,7 +160,7 @@ export async function getActivityFeed(options?: {
           status,
           error_message,
           sent_at,
-          campaign_leads(
+          campaign_leads!inner(
             campaign_id,
             campaigns(id, name),
             leads(email, variables)
@@ -152,6 +175,10 @@ export async function getActivityFeed(options?: {
         query = query.eq('status', 'failed')
       }
 
+      if (options?.campaignId) {
+        query = query.eq('campaign_leads.campaign_id', options.campaignId)
+      }
+
       const { data: sendsData } = await query
 
       for (const s of sendsData || []) {
@@ -160,8 +187,6 @@ export async function getActivityFeed(options?: {
         const campaign = cl?.campaigns
         const inbox = (s as any).email_accounts
         const step = (s as any).campaign_steps
-
-        if (options?.campaignId && cl?.campaign_id !== options.campaignId) continue
 
         events.push({
           id: s.id,
@@ -192,7 +217,7 @@ export async function getActivityFeed(options?: {
           llm_category,
           received_at,
           snippet,
-          campaign_leads(
+          campaign_leads!inner(
             campaign_id,
             campaigns(id, name),
             leads(email, variables),
@@ -202,6 +227,10 @@ export async function getActivityFeed(options?: {
         .order('received_at', { ascending: false })
         .limit(limit)
 
+      if (options?.campaignId) {
+        query = query.eq('campaign_leads.campaign_id', options.campaignId)
+      }
+
       const { data: repliesData } = await query
 
       for (const r of repliesData || []) {
@@ -209,8 +238,6 @@ export async function getActivityFeed(options?: {
         const lead = cl?.leads
         const campaign = cl?.campaigns
         const inbox = cl?.email_accounts
-
-        if (options?.campaignId && cl?.campaign_id !== options.campaignId) continue
 
         events.push({
           id: r.id,
