@@ -345,7 +345,7 @@ export function InboxCard({ inbox }: InboxCardProps) {
       </div>
 
       {/* Editable Rate Limits & Timers Bar */}
-      <div className="px-5 py-4 bg-zinc-900/40 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center text-xs">
+      <div className="px-5 py-4 bg-zinc-900/40 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start text-xs">
         {/* Editable Daily Send Limit */}
         <div className="space-y-1">
           <label className="text-[11px] font-medium text-zinc-400 flex items-center justify-between">
@@ -404,6 +404,8 @@ export function InboxCard({ inbox }: InboxCardProps) {
               className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono font-semibold text-zinc-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
           </div>
+          {/* Invisible spacer to match Daily Limit cell's progress bar height, keeping inputs aligned */}
+          <div className="h-1.5 mt-1.5" />
         </div>
 
         {/* Last Send Activity */}
