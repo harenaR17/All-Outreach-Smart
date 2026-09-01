@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import type { Lead, Campaign } from '@/lib/types/database'
+import { Pagination } from '@/components/shared/Pagination'
 import {
   Search,
   ShieldBan,
@@ -26,6 +27,8 @@ import { formatDate } from '@/lib/utils'
 import { EditLeadModal } from './EditLeadModal'
 import { AssignCampaignModal } from './AssignCampaignModal'
 
+const PAGE_SIZE = 25
+
 interface LeadsTableProps {
   initialLeads: Lead[]
   campaigns: Campaign[]
@@ -42,6 +45,8 @@ export function LeadsTable({ initialLeads, campaigns }: LeadsTableProps) {
   const [assignTargetEmails, setAssignTargetEmails] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [isPending, startTransition] = useTransition()
+  const [page, setPage] = useState(1)
+  const [paginationFilterKey, setPaginationFilterKey] = useState(`${statusFilter}__${search}`)
 
   // Filter leads based on search & tab
   const filteredLeads = initialLeads.filter((lead) => {
@@ -58,6 +63,25 @@ export function LeadsTable({ initialLeads, campaigns }: LeadsTableProps) {
 
     return true
   })
+
+  // Reset to page 1 when the search/tab changes, and clamp back in range if the
+  // list shrinks under the current page (e.g. delete on the last page). Adjusted
+  // during render rather than in an effect — see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-state-when-a-prop-changes
+  let effectivePage = page
+  const filterKey = `${statusFilter}__${search}`
+  if (filterKey !== paginationFilterKey) {
+    setPaginationFilterKey(filterKey)
+    setPage(1)
+    effectivePage = 1
+  }
+  const maxPage = Math.max(1, Math.ceil(filteredLeads.length / PAGE_SIZE))
+  if (effectivePage > maxPage) {
+    setPage(maxPage)
+    effectivePage = maxPage
+  }
+
+  const paginatedLeads = filteredLeads.slice((effectivePage - 1) * PAGE_SIZE, effectivePage * PAGE_SIZE)
 
   // Selection handlers
   const handleToggleSelectAll = () => {
@@ -273,8 +297,8 @@ export function LeadsTable({ initialLeads, campaigns }: LeadsTableProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/60 text-zinc-300">
-              {filteredLeads.length > 0 ? (
-                filteredLeads.map((lead) => {
+              {paginatedLeads.length > 0 ? (
+                paginatedLeads.map((lead) => {
                   const varEntries = Object.entries(lead.variables || {}).slice(0, 3)
                   const isSelected = selectedIds.has(lead.id)
 
@@ -448,6 +472,14 @@ export function LeadsTable({ initialLeads, campaigns }: LeadsTableProps) {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          currentPage={effectivePage}
+          totalItems={filteredLeads.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+          itemLabel="leads"
+        />
       </div>
 
       {/* Edit Lead Modal */}

@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import { ActivityEvent, ActivitySummaryStats } from '@/app/actions/activity'
 import { formatDate } from '@/lib/utils'
+import { Pagination } from '@/components/shared/Pagination'
 import {
   Send,
   MessageSquare,
@@ -58,10 +59,14 @@ const CATEGORY_BADGES: Record<string, { label: string; bg: string; text: string;
   },
 }
 
+const PAGE_SIZE = 25
+
 export function ActivityFeed({ initialEvents, stats }: Props) {
   const [events] = useState<ActivityEvent[]>(initialEvents)
   const [activeTab, setActiveTab] = useState<'all' | 'sends' | 'replies' | 'failed'>('all')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [paginationFilterKey, setPaginationFilterKey] = useState(`${activeTab}__${search}`)
 
   const filteredEvents = useMemo(() => {
     return events.filter((ev) => {
@@ -82,6 +87,28 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
       return true
     })
   }, [events, activeTab, search])
+
+  // Reset to page 1 when the search/tab changes, and clamp back in range if the
+  // list shrinks under the current page. Adjusted during render rather than in
+  // an effect — see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-state-when-a-prop-changes
+  let effectivePage = page
+  const filterKey = `${activeTab}__${search}`
+  if (filterKey !== paginationFilterKey) {
+    setPaginationFilterKey(filterKey)
+    setPage(1)
+    effectivePage = 1
+  }
+  const maxPage = Math.max(1, Math.ceil(filteredEvents.length / PAGE_SIZE))
+  if (effectivePage > maxPage) {
+    setPage(maxPage)
+    effectivePage = maxPage
+  }
+
+  const paginatedEvents = useMemo(
+    () => filteredEvents.slice((effectivePage - 1) * PAGE_SIZE, effectivePage * PAGE_SIZE),
+    [filteredEvents, effectivePage]
+  )
 
   const replyRate = stats.totalSends > 0 ? ((stats.totalReplies / stats.totalSends) * 100).toFixed(1) : '0.0'
   const bounceRate = stats.totalSends > 0 ? ((stats.totalBounces / stats.totalSends) * 100).toFixed(1) : '0.0'
@@ -204,8 +231,9 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
       {/* Activity Log Feed */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 overflow-hidden">
         {filteredEvents.length > 0 ? (
+          <>
           <div className="divide-y divide-zinc-800/60">
-            {filteredEvents.map((ev) => {
+            {paginatedEvents.map((ev) => {
               const badge = ev.llmCategory ? CATEGORY_BADGES[ev.llmCategory] : null
 
               return (
@@ -317,6 +345,14 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
               )
             })}
           </div>
+          <Pagination
+            currentPage={effectivePage}
+            totalItems={filteredEvents.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="events"
+          />
+          </>
         ) : (
           <div className="p-12 text-center space-y-2">
             <Clock className="w-8 h-8 text-zinc-600 mx-auto" />

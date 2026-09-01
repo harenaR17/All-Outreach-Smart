@@ -6,6 +6,7 @@ import { CampaignLeadItem, updateCampaignLeadState, removeLeadFromCampaign } fro
 import { formatDate } from '@/lib/utils'
 import { ImportLeadsModal } from '@/components/leads/ImportLeadsModal'
 import { AddLeadModal } from '@/components/leads/AddLeadModal'
+import { Pagination } from '@/components/shared/Pagination'
 import type { Campaign } from '@/lib/types/database'
 import {
   Users,
@@ -70,12 +71,16 @@ const CATEGORY_BADGES: Record<string, { label: string; bg: string; text: string;
   },
 }
 
+const PAGE_SIZE = 25
+
 export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = [] }: Props) {
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [isPending, startTransition] = useTransition()
   const [updatingLeadId, setUpdatingLeadId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [paginationFilterKey, setPaginationFilterKey] = useState(`${statusFilter}__${search}`)
 
   // Modals
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
@@ -94,6 +99,28 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
       return true
     })
   }, [leads, statusFilter, search])
+
+  // Reset to page 1 when the search/tab changes, and clamp back in range if the
+  // list shrinks under the current page (e.g. remove on the last page). Adjusted
+  // during render rather than in an effect — see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-state-when-a-prop-changes
+  let effectivePage = page
+  const filterKey = `${statusFilter}__${search}`
+  if (filterKey !== paginationFilterKey) {
+    setPaginationFilterKey(filterKey)
+    setPage(1)
+    effectivePage = 1
+  }
+  const maxPage = Math.max(1, Math.ceil(filteredLeads.length / PAGE_SIZE))
+  if (effectivePage > maxPage) {
+    setPage(maxPage)
+    effectivePage = maxPage
+  }
+
+  const paginatedLeads = useMemo(
+    () => filteredLeads.slice((effectivePage - 1) * PAGE_SIZE, effectivePage * PAGE_SIZE),
+    [filteredLeads, effectivePage]
+  )
 
   // Handlers for campaign lead state
   const handleStateUpdate = (campaignLeadId: string, updates: Parameters<typeof updateCampaignLeadState>[1]) => {
@@ -258,6 +285,7 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
       {/* Leads Table */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 overflow-hidden">
         {filteredLeads.length > 0 ? (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-zinc-900/60 border-b border-zinc-800 text-zinc-400 font-medium">
@@ -272,7 +300,7 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60">
-                {filteredLeads.map((item) => {
+                {paginatedLeads.map((item) => {
                   const company = (item.variables?.company as string) || (item.variables?.Company as string)
                   const firstName = (item.variables?.first_name as string) || (item.variables?.Name as string)
                   const currentCategory = item.latest_reply?.llm_category
@@ -455,6 +483,14 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={effectivePage}
+            totalItems={filteredLeads.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="leads"
+          />
+          </>
         ) : leads.length === 0 ? (
           /* Empty State when no leads exist in campaign */
           <div className="p-12 text-center space-y-4">
