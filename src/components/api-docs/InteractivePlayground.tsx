@@ -666,7 +666,7 @@ export function InteractivePlayground({ apiKeys = [], campaigns = [] }: Interact
               </div>
 
               {/* Response Content */}
-              <div className="p-4 flex-1 overflow-x-auto text-xs font-mono">
+              <div className="p-4 flex-1 overflow-x-auto overflow-y-auto max-h-96 text-xs font-mono">
                 {isLoading ? (
                   <div className="h-full min-h-[180px] flex flex-col items-center justify-center text-zinc-500 gap-2">
                     <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
