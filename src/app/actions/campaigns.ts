@@ -75,6 +75,18 @@ function normalizeCompanyLimit(value: number | null | undefined): number {
   return Math.max(0, Math.floor(value))
 }
 
+/**
+ * Normalises the per-company daily cap for campaign creation. Unlike
+ * normalizeCompanyLimit, an unset value (null/undefined) is left `undefined`
+ * so the caller can omit the column from the insert and let the DB default
+ * (2, as of migration 00010) apply instead of forcing 0 ("unlimited").
+ * An explicitly provided value (including 0) is respected as-is.
+ */
+function normalizeCompanyLimitForCreate(value: number | null | undefined): number | undefined {
+  if (value === null || value === undefined || !Number.isFinite(value)) return undefined
+  return Math.max(0, Math.floor(value))
+}
+
 // ─── List ────────────────────────────────────────────────────────────────────
 
 export async function getCampaigns(): Promise<{
@@ -215,6 +227,10 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
 }> {
   try {
     const supabase = supabaseAdmin()
+    // Leave limit_emails_per_company unset when the caller didn't provide a
+    // value, so the DB column default (2) applies instead of forcing 0
+    // ("unlimited"). If the caller did provide a value, respect it as-is.
+    const limitEmailsPerCompany = normalizeCompanyLimitForCreate(input.limit_emails_per_company)
     const { data, error } = await supabase
       .from('campaigns')
       .insert({
@@ -226,7 +242,9 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
         working_hours_end: input.working_hours_end,
         stop_on_auto_reply: input.stop_on_auto_reply ?? true,
         send_priority: input.send_priority ?? 'new_leads',
-        limit_emails_per_company: normalizeCompanyLimit(input.limit_emails_per_company),
+        ...(limitEmailsPerCompany !== undefined
+          ? { limit_emails_per_company: limitEmailsPerCompany }
+          : {}),
       })
       .select()
       .single()
