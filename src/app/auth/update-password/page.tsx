@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { getSupabaseBrowserClient, setBrowserSupabaseCredentials } from '@/lib/supabase/client'
+import { getPublicSupabaseConfig } from '@/app/actions/setup'
 import { Send, Lock, ArrowRight, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 
 export default function UpdatePasswordPage() {
@@ -12,6 +13,20 @@ export default function UpdatePasswordPage() {
   const [loading, setLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+
+  const ensureSupabaseClient = async () => {
+    let client = getSupabaseBrowserClient()
+    if (!client) {
+      try {
+        const config = await getPublicSupabaseConfig()
+        if (config?.supabaseUrl && config?.supabaseAnonKey) {
+          setBrowserSupabaseCredentials(config.supabaseUrl, config.supabaseAnonKey)
+          client = getSupabaseBrowserClient()
+        }
+      } catch {}
+    }
+    return client
+  }
 
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,7 +46,7 @@ export default function UpdatePasswordPage() {
     setLoading(true)
 
     try {
-      const supabase = getSupabaseBrowserClient()
+      const supabase = await ensureSupabaseClient()
       if (!supabase) throw new Error('Supabase client unavailable')
 
       const { error } = await supabase.auth.updateUser({

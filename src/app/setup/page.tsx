@@ -53,8 +53,8 @@ export default function SetupPage() {
     // Check if system is already configured
     getSetupStatus().then((status) => {
       if (status.isConfigured && status.isDatabaseReady && status.hasAdminUser) {
-        // Already fully configured, bounce to dashboard
-        router.push('/')
+        // Already fully configured, redirect to login
+        router.push('/login')
       } else {
         if (status.supabaseUrl) {
           setFormData((prev) => ({ ...prev, supabaseUrl: status.supabaseUrl || '' }))

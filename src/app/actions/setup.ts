@@ -14,6 +14,38 @@ export interface SetupStatus {
 }
 
 /**
+ * Safely returns public Supabase connection parameters (URL and Anon Key).
+ * Used by client auth context to initialize browser client if build-time env vars were not inlined.
+ */
+export async function getPublicSupabaseConfig(): Promise<{
+  supabaseUrl: string
+  supabaseAnonKey: string
+  isConfigured: boolean
+}> {
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || ''
+  let anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
+  let completed = process.env.SETUP_COMPLETED === 'true' || process.env.NEXT_PUBLIC_SETUP_COMPLETED === 'true'
+
+  if (!url || !anonKey || !completed) {
+    try {
+      const { cookies } = await import('next/headers')
+      const cookieStore = await cookies()
+      url = url || cookieStore.get('os_supabase_url')?.value || ''
+      anonKey = anonKey || cookieStore.get('os_supabase_anon_key')?.value || ''
+      completed = completed || cookieStore.get('os_setup_completed')?.value === 'true'
+    } catch {
+      // Cookies not accessible
+    }
+  }
+
+  return {
+    supabaseUrl: url,
+    supabaseAnonKey: anonKey,
+    isConfigured: Boolean(url && anonKey) || completed,
+  }
+}
+
+/**
  * 1. Inspect setup state and database readiness.
  */
 export async function getSetupStatus(): Promise<SetupStatus> {

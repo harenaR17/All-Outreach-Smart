@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { getSupabaseBrowserClient, setBrowserSupabaseCredentials } from '@/lib/supabase/client'
+import { getPublicSupabaseConfig } from '@/app/actions/setup'
 import { useAuth } from '@/components/auth/AuthContext'
 import { Send, Lock, Mail, ArrowRight, Loader2, KeyRound, CheckCircle2, AlertCircle } from 'lucide-react'
 
@@ -17,6 +18,20 @@ export default function LoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
 
+  const ensureSupabaseClient = async () => {
+    let client = getSupabaseBrowserClient()
+    if (!client) {
+      try {
+        const config = await getPublicSupabaseConfig()
+        if (config?.supabaseUrl && config?.supabaseAnonKey) {
+          setBrowserSupabaseCredentials(config.supabaseUrl, config.supabaseAnonKey)
+          client = getSupabaseBrowserClient()
+        }
+      } catch {}
+    }
+    return client
+  }
+
   const handlePasswordSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
@@ -24,9 +39,9 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const supabase = getSupabaseBrowserClient()
+      const supabase = await ensureSupabaseClient()
       if (!supabase) {
-        throw new Error('Supabase client is not available.')
+        throw new Error('Supabase client is not available. Please verify connection credentials.')
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -64,9 +79,9 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const supabase = getSupabaseBrowserClient()
+      const supabase = await ensureSupabaseClient()
       if (!supabase) {
-        throw new Error('Supabase client is not available.')
+        throw new Error('Supabase client is not available. Please verify connection credentials.')
       }
 
       const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/` : undefined
@@ -108,7 +123,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const supabase = getSupabaseBrowserClient()
+      const supabase = await ensureSupabaseClient()
       if (!supabase) throw new Error('Supabase client unavailable')
 
       const redirectUrl = typeof window !== 'undefined' ? `${window.location.origin}/auth/update-password` : undefined
