@@ -257,7 +257,7 @@ export function CampaignStudio({
       )}
 
       {activeTab === 'schedule' && (
-        <div className="max-w-lg space-y-5">
+        <div className="space-y-5">
           <h3 className="text-xs font-semibold text-zinc-300 flex items-center gap-2">
             <Settings className="w-3.5 h-3.5 text-indigo-400" />
             Schedule & Settings
@@ -269,6 +269,8 @@ export function CampaignStudio({
             </div>
           )}
 
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
+          <div className="space-y-5">
           {/* Timezone */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
@@ -348,7 +350,9 @@ export function CampaignStudio({
               className="w-4 h-4 rounded border-zinc-700 accent-indigo-600 cursor-pointer shrink-0"
             />
           </label>
+          </div>
 
+          <div className="space-y-5">
           {/* Lead Sending Priority */}
           <div className="space-y-2 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
             <div className="flex items-center justify-between">
@@ -492,6 +496,8 @@ export function CampaignStudio({
                 No Telegram bots configured. Add bots in Settings to enable notifications.
               </p>
             )}
+          </div>
+          </div>
           </div>
         </div>
       )}
