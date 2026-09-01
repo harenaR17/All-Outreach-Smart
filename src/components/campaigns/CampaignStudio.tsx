@@ -2,16 +2,32 @@
 
 import { useState, useCallback, useRef } from 'react'
 import {
-  Layers, Inbox, Settings, Globe, Clock, Users, Send, Check, Zap
+  Layers, Inbox, Settings, Globe, Clock, Users, Send, Check, Zap, BarChart3
 } from 'lucide-react'
 import type { CampaignDetail, SaveCampaignInput, SaveStepInput, CampaignLeadItem } from '@/app/actions/campaigns'
 import type { EmailAccount, Lead, Campaign, TelegramRecipient } from '@/lib/types/database'
+import type { ActivityEvent, ActivitySummaryStats } from '@/app/actions/activity'
 import { StepEditor } from './StepEditor'
 import { LiveLeadPreview } from './LiveLeadPreview'
 import { InboxPoolSelector } from './InboxPoolSelector'
 import { CampaignActionBar } from './CampaignActionBar'
 import { CampaignLeadsTab } from './CampaignLeadsTab'
+import { CampaignAnalyticsTab } from './CampaignAnalyticsTab'
 import { CAMPAIGN_TIMEZONES } from '@/lib/timezones'
+
+const EMPTY_ACTIVITY_STATS: ActivitySummaryStats = {
+  sendsToday: 0,
+  totalSends: 0,
+  totalReplies: 0,
+  totalBounces: 0,
+  failedSends: 0,
+  interestedCount: 0,
+  notInterestedCount: 0,
+  wrongPersonCount: 0,
+  undefinedCount: 0,
+  outOfOfficeCount: 0,
+  positiveReplyRate: 0,
+}
 
 const DAYS = [
   { label: 'Mon', value: 1 }, { label: 'Tue', value: 2 }, { label: 'Wed', value: 3 },
@@ -19,7 +35,7 @@ const DAYS = [
   { label: 'Sun', value: 7 },
 ]
 
-type Tab = 'leads' | 'sequence' | 'inboxes' | 'schedule'
+type Tab = 'leads' | 'sequence' | 'inboxes' | 'schedule' | 'analytics'
 
 interface Props {
   campaign: CampaignDetail
@@ -28,6 +44,8 @@ interface Props {
   campaignLeads?: CampaignLeadItem[]
   allTelegramRecipients?: TelegramRecipient[]
   allCampaigns?: Campaign[]
+  activityStats?: ActivitySummaryStats
+  activityEvents?: ActivityEvent[]
 }
 
 export function CampaignStudio({
@@ -37,6 +55,8 @@ export function CampaignStudio({
   campaignLeads = [],
   allTelegramRecipients = [],
   allCampaigns = [],
+  activityStats = EMPTY_ACTIVITY_STATS,
+  activityEvents = [],
 }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('leads')
   const [currentStatus, setCurrentStatus] = useState<Campaign['status']>(campaign.status)
@@ -130,6 +150,7 @@ export function CampaignStudio({
     { id: 'inboxes',  label: `Inboxes (${selectedInboxIds.length})`, icon: <Inbox className="w-3.5 h-3.5" /> },
     { id: 'sequence', label: `Sequence (${campaign.steps.length})`, icon: <Layers className="w-3.5 h-3.5" /> },
     { id: 'schedule', label: 'Schedule', icon: <Settings className="w-3.5 h-3.5" /> },
+    { id: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-3.5 h-3.5" /> },
   ]
 
   return (
@@ -459,6 +480,16 @@ export function CampaignStudio({
               <span className="text-zinc-200 font-medium">{campaign.leadCount}</span> leads attached to this campaign
             </span>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'analytics' && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-semibold text-zinc-300 flex items-center gap-2">
+            <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
+            Campaign Analytics
+          </h3>
+          <CampaignAnalyticsTab stats={activityStats} events={activityEvents} />
         </div>
       )}
     </div>
