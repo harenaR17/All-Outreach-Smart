@@ -14,6 +14,10 @@ export interface CampaignWithMeta extends Campaign {
   stepCount: number
   inboxCount: number
   leadCount: number
+  /** Non-bounce replies / sent emails for this campaign, as a fraction (0–1). 0 when no sends yet. */
+  replyRate: number
+  /** Replies classified 'interested' / sent emails for this campaign, as a fraction (0–1). 0 when no sends yet. */
+  positiveReplyRate: number
 }
 
 export interface CampaignDetail extends Campaign {
@@ -78,7 +82,7 @@ export async function getCampaigns(): Promise<{
     // Fetch counts in parallel
     const withMeta = await Promise.all(
       campaigns.map(async (camp) => {
-        const [stepsRes, inboxRes, leadRes] = await Promise.all([
+        const [stepsRes, inboxRes, leadRes, sentRes, replyRes, positiveReplyRes] = await Promise.all([
           supabase
             .from('campaign_steps')
             .select('id', { count: 'exact', head: true })
@@ -91,13 +95,37 @@ export async function getCampaigns(): Promise<{
             .from('campaign_leads')
             .select('id', { count: 'exact', head: true })
             .eq('campaign_id', camp.id),
+          supabase
+            .from('sends')
+            .select('id, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+            .eq('campaign_leads.campaign_id', camp.id)
+            .eq('status', 'sent'),
+          // "Reply" = any non-bounce reply (real or auto), matching the site-wide
+          // reply-rate definition used in the Activity summary stats.
+          supabase
+            .from('replies')
+            .select('id, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+            .eq('campaign_leads.campaign_id', camp.id)
+            .neq('classification', 'bounce'),
+          // "Positive reply" = replies the LLM classified as 'interested'.
+          supabase
+            .from('replies')
+            .select('id, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+            .eq('campaign_leads.campaign_id', camp.id)
+            .eq('llm_category', 'interested'),
         ])
+
+        const sentCount = sentRes.count ?? 0
+        const replyCount = replyRes.count ?? 0
+        const positiveReplyCount = positiveReplyRes.count ?? 0
 
         return {
           ...camp,
           stepCount: stepsRes.count ?? 0,
           inboxCount: inboxRes.count ?? 0,
           leadCount: leadRes.count ?? 0,
+          replyRate: sentCount > 0 ? replyCount / sentCount : 0,
+          positiveReplyRate: sentCount > 0 ? positiveReplyCount / sentCount : 0,
         } satisfies CampaignWithMeta
       })
     )
