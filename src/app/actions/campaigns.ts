@@ -465,6 +465,57 @@ export async function saveCampaign(
       if (recipErr) return { success: false, error: recipErr.message }
     }
 
+    // 5. Reconcile completed leads whose current_step is behind the (possibly just
+    //    grown) step count — e.g. a lead finished all 3 steps of a campaign and was
+    //    marked 'completed', then a 4th step was added here, making current_step (3)
+    //    a valid index again. Reactivate those leads so the sender cron picks them
+    //    back up. Reconciliation-style / idempotent: runs on every save and is a
+    //    no-op whenever no completed lead is behind the current step count. Never
+    //    touches any other status (in particular 'replied' leads must stay untouched).
+    const finalStepCount = input.steps.length
+    const { data: staleCompletedLeads, error: staleLeadsErr } = await supabase
+      .from('campaign_leads')
+      .select('id, current_step')
+      .eq('campaign_id', id)
+      .eq('status', 'completed')
+      .lt('current_step', finalStepCount)
+
+    if (staleLeadsErr) return { success: false, error: staleLeadsErr.message }
+
+    if (staleCompletedLeads && staleCompletedLeads.length > 0) {
+      // Re-fetch the freshly saved steps (ordered) so we can compute each lead's
+      // next-step delay from its actual current_step.
+      const { data: savedSteps, error: savedStepsErr } = await supabase
+        .from('campaign_steps')
+        .select('*')
+        .eq('campaign_id', id)
+        .order('step_order', { ascending: true })
+
+      if (savedStepsErr) return { success: false, error: savedStepsErr.message }
+
+      const orderedSteps = (savedSteps ?? []) as CampaignStep[]
+
+      for (const cl of staleCompletedLeads) {
+        const nextStep = orderedSteps[cl.current_step]
+        if (!nextStep) continue // shouldn't happen given the current_step < finalStepCount filter above
+
+        // Mirror the sender cron's follow-up scheduling formula exactly
+        // (src/app/api/cron/sender/route.ts, "16. Advance campaign_lead state"):
+        // base delay from the step's delay_days, plus 15-60 min random jitter.
+        const baseDelayMs = nextStep.delay_days * 86_400 * 1_000
+        const jitterMs =
+          (Math.floor(Math.random() * 46) + 15) * 60 * 1_000 * (Math.random() < 0.5 ? -1 : 1)
+        const nextSendAt = new Date(Date.now() + baseDelayMs + jitterMs).toISOString()
+
+        const { error: reactivateErr } = await supabase
+          .from('campaign_leads')
+          .update({ status: 'active', next_send_at: nextSendAt })
+          .eq('id', cl.id)
+
+        if (reactivateErr) return { success: false, error: reactivateErr.message }
+      }
+    }
+
     revalidatePath('/campaigns')
     revalidatePath(`/campaigns/${id}`)
     return { success: true }
@@ -765,6 +816,131 @@ export async function updateCampaignLeadState(
 
     if (updates.campaignId) revalidatePath(`/campaigns/${updates.campaignId}`)
     revalidatePath('/campaigns')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+// ─── Bulk Campaign Lead State Updates ────────────────────────────────────────
+// Bulk equivalents of updateCampaignLeadState / removeLeadFromCampaign above,
+// following the same .in('id', ...) + error-handling pattern used by
+// bulkUpdateLeadStatus / bulkDeleteLeads in src/app/actions/leads.ts.
+
+/**
+ * Bulk-restarts sequence from Step 1 for multiple campaign leads.
+ * Mirrors the `restart` branch of updateCampaignLeadState.
+ */
+export async function bulkRestartCampaignLeads(
+  campaignLeadIds: string[],
+  campaignId?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!campaignLeadIds || campaignLeadIds.length === 0) {
+      return { success: false, error: 'No leads selected' }
+    }
+
+    const supabase = supabaseAdmin()
+    const { error } = await supabase
+      .from('campaign_leads')
+      .update({
+        current_step: 0,
+        status: 'pending',
+        next_send_at: null,
+        thread_id: null,
+        last_message_id: null,
+      })
+      .in('id', campaignLeadIds)
+
+    if (error) return { success: false, error: error.message }
+
+    if (campaignId) revalidatePath(`/campaigns/${campaignId}`)
+    revalidatePath('/campaigns')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+/**
+ * Bulk-pauses multiple campaign leads (stops future sends until resumed).
+ * Mirrors the `status: 'paused'` branch of updateCampaignLeadState.
+ */
+export async function bulkPauseCampaignLeads(
+  campaignLeadIds: string[],
+  campaignId?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!campaignLeadIds || campaignLeadIds.length === 0) {
+      return { success: false, error: 'No leads selected' }
+    }
+
+    const supabase = supabaseAdmin()
+    const { error } = await supabase
+      .from('campaign_leads')
+      .update({ status: 'paused', next_send_at: null })
+      .in('id', campaignLeadIds)
+
+    if (error) return { success: false, error: error.message }
+
+    if (campaignId) revalidatePath(`/campaigns/${campaignId}`)
+    revalidatePath('/campaigns')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+/**
+ * Bulk-resumes multiple paused campaign leads, re-queuing them for the sender cron.
+ * Mirrors the single-lead resume call in CampaignLeadsTab.tsx (status -> 'pending').
+ */
+export async function bulkResumeCampaignLeads(
+  campaignLeadIds: string[],
+  campaignId?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!campaignLeadIds || campaignLeadIds.length === 0) {
+      return { success: false, error: 'No leads selected' }
+    }
+
+    const supabase = supabaseAdmin()
+    const { error } = await supabase
+      .from('campaign_leads')
+      .update({ status: 'pending' })
+      .in('id', campaignLeadIds)
+
+    if (error) return { success: false, error: error.message }
+
+    if (campaignId) revalidatePath(`/campaigns/${campaignId}`)
+    revalidatePath('/campaigns')
+    return { success: true }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+/**
+ * Bulk-removes / unassigns multiple leads from a campaign sequence, without deleting
+ * them from the global lead pool. Mirrors removeLeadFromCampaign above.
+ */
+export async function bulkRemoveCampaignLeads(
+  campaignLeadIds: string[],
+  campaignId?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!campaignLeadIds || campaignLeadIds.length === 0) {
+      return { success: false, error: 'No leads selected' }
+    }
+
+    const supabase = supabaseAdmin()
+    const { error } = await supabase.from('campaign_leads').delete().in('id', campaignLeadIds)
+
+    if (error) return { success: false, error: error.message }
+
+    if (campaignId) revalidatePath(`/campaigns/${campaignId}`)
+    revalidatePath('/campaigns')
+    revalidatePath('/leads')
     return { success: true }
   } catch (err: unknown) {
     return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
