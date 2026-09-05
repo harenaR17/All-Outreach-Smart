@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { ActivityEvent, ActivitySummaryStats } from '@/app/actions/activity'
 import { formatDate } from '@/lib/utils'
 import { Pagination } from '@/components/shared/Pagination'
+import { CATEGORY_BADGES } from '@/lib/constants/replyCategories'
 import {
   Send,
   MessageSquare,
@@ -24,39 +25,6 @@ import {
 interface Props {
   initialEvents: ActivityEvent[]
   stats: ActivitySummaryStats
-}
-
-const CATEGORY_BADGES: Record<string, { label: string; bg: string; text: string; border: string }> = {
-  interested: {
-    label: '🎯 Interested',
-    bg: 'bg-emerald-500/10',
-    text: 'text-emerald-400',
-    border: 'border-emerald-500/20',
-  },
-  not_interested: {
-    label: '🛑 Not Interested',
-    bg: 'bg-rose-500/10',
-    text: 'text-rose-400',
-    border: 'border-rose-500/20',
-  },
-  wrong_person: {
-    label: '🔄 Wrong Person',
-    bg: 'bg-amber-500/10',
-    text: 'text-amber-400',
-    border: 'border-amber-500/20',
-  },
-  undefined: {
-    label: '❓ Undefined',
-    bg: 'bg-purple-500/10',
-    text: 'text-purple-400',
-    border: 'border-purple-500/20',
-  },
-  out_of_office: {
-    label: '🏖️ Out of Office',
-    bg: 'bg-blue-500/10',
-    text: 'text-blue-400',
-    border: 'border-blue-500/20',
-  },
 }
 
 const PAGE_SIZE = 15
