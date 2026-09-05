@@ -26,6 +26,9 @@ export interface SmartBoxLead {
   leadVariables: Record<string, unknown>
   status: string
   threadId: string | null
+  emailAccountId: string | null
+  /** email_accounts.email for the assigned sending inbox; null before the lead's first send */
+  inboxEmail: string | null
   latestReply: SmartBoxLatestReply
 }
 
@@ -95,7 +98,9 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
     // and campaign (name) info SmartBox needs to render.
     const { data: leadRows, error: leadsErr } = await supabase
       .from('campaign_leads')
-      .select('id, campaign_id, lead_id, status, thread_id, campaigns(id, name), leads(id, email, variables)')
+      .select(
+        'id, campaign_id, lead_id, status, thread_id, email_account_id, campaigns(id, name), leads(id, email, variables), email_accounts(id, email)'
+      )
       .in('id', eligibleLeadIds)
 
     if (leadsErr) return { success: false, error: leadsErr.message }
@@ -109,6 +114,7 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
         email: string
         variables: Record<string, unknown>
       } | null
+      const emailAccount = row.email_accounts as unknown as { id: string; email: string } | null
 
       return {
         id: row.id,
@@ -119,6 +125,8 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
         leadVariables: lead?.variables || {},
         status: row.status,
         threadId: row.thread_id,
+        emailAccountId: emailAccount?.id || row.email_account_id,
+        inboxEmail: emailAccount?.email || null,
         latestReply: latestReplyByLead.get(row.id)!,
       }
     })
