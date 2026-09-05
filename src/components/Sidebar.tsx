@@ -18,7 +18,8 @@ import {
   Sparkles,
   Workflow,
   Database,
-  ChevronDown
+  ChevronDown,
+  Inbox,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: '/leads', label: 'Leads & Import', icon: Users, badge: 'Phase 2' },
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone, badge: 'Phase 3' },
   { href: '/activity', label: 'Live Activity', icon: Activity, badge: 'Phase 4' },
+  { href: '/smartbox', label: 'SmartBox', icon: Inbox, badge: 'Phase 5' },
   { href: '/settings', label: 'Settings & Telegram', icon: Settings, badge: 'Phase 5' },
   { href: '/api-docs', label: 'API Documentation', icon: Code2, badge: 'REST' },
 ]
