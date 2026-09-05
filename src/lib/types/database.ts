@@ -538,6 +538,53 @@ export type Database = {
         }
         Relationships: []
       }
+      thread_messages: {
+        Row: {
+          body_text: string | null
+          campaign_lead_id: string
+          created_at: string
+          direction: "inbound" | "outbound"
+          from_address: string | null
+          gmail_message_id: string
+          id: string
+          occurred_at: string
+          subject: string | null
+          to_address: string | null
+        }
+        Insert: {
+          body_text?: string | null
+          campaign_lead_id: string
+          created_at?: string
+          direction: "inbound" | "outbound"
+          from_address?: string | null
+          gmail_message_id: string
+          id?: string
+          occurred_at?: string
+          subject?: string | null
+          to_address?: string | null
+        }
+        Update: {
+          body_text?: string | null
+          campaign_lead_id?: string
+          created_at?: string
+          direction?: "inbound" | "outbound"
+          from_address?: string | null
+          gmail_message_id?: string
+          id?: string
+          occurred_at?: string
+          subject?: string | null
+          to_address?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "thread_messages_campaign_lead_id_fkey"
+            columns: ["campaign_lead_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -577,3 +624,6 @@ export type TelegramRecipient = Database["public"]["Tables"]["telegram_notify_re
 export type CampaignTelegramRecipient = Database["public"]["Tables"]["campaign_telegram_recipients"]["Row"]
 export type ApiKey = Database["public"]["Tables"]["api_keys"]["Row"]
 export type ApiKeyInsert = Database["public"]["Tables"]["api_keys"]["Insert"]
+
+export type ThreadMessage = Database["public"]["Tables"]["thread_messages"]["Row"]
+export type ThreadMessageInsert = Database["public"]["Tables"]["thread_messages"]["Insert"]
