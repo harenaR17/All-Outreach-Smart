@@ -83,17 +83,21 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
   const [editingLead, setEditingLead] = useState<Lead | null>(null)
 
   const filteredLeads = useMemo(() => {
-    return leads.filter((item) => {
-      if (statusFilter !== 'all' && item.status !== statusFilter) return false
-      if (search.trim()) {
-        const q = search.toLowerCase()
-        const emailMatch = item.email.toLowerCase().includes(q)
-        const companyMatch = (item.variables?.company as string)?.toLowerCase()?.includes(q)
-        const nameMatch = (item.variables?.first_name as string)?.toLowerCase()?.includes(q)
-        return emailMatch || companyMatch || nameMatch
-      }
-      return true
-    })
+    return leads
+      .filter((item) => {
+        if (statusFilter !== 'all' && item.status !== statusFilter) return false
+        if (search.trim()) {
+          const q = search.toLowerCase()
+          const emailMatch = item.email.toLowerCase().includes(q)
+          const companyMatch = (item.variables?.company as string)?.toLowerCase()?.includes(q)
+          const nameMatch = (item.variables?.first_name as string)?.toLowerCase()?.includes(q)
+          return emailMatch || companyMatch || nameMatch
+        }
+        return true
+      })
+      // Sort globally by current_step ascending so pagination itself follows
+      // step order, not just the grouping within an arbitrary page.
+      .sort((a, b) => a.current_step - b.current_step)
   }, [leads, statusFilter, search])
 
   // Reset to page 1 when the search/tab changes, and clamp back in range if the
