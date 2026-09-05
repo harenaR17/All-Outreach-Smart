@@ -562,7 +562,7 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
 
             <div className="flex flex-wrap gap-1.5">
               <span
-                className={`px-1.5 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 ${
+                className={`px-1.5 py-0.5 rounded-lg text-[10px] font-medium border flex items-center gap-1 ${
                   deployedSlugs && deployedSlugs.length > 0
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                     : 'bg-zinc-900 text-zinc-500 border-zinc-800'
@@ -571,7 +571,7 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
                 <CheckCircle2 className="w-3 h-3" /> Functions Deployed
               </span>
               <span
-                className={`px-1.5 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 ${
+                className={`px-1.5 py-0.5 rounded-lg text-[10px] font-medium border flex items-center gap-1 ${
                   secretsInjected
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                     : 'bg-zinc-900 text-zinc-500 border-zinc-800'
@@ -580,7 +580,7 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
                 <CheckCircle2 className="w-3 h-3" /> Secrets Injected
               </span>
               <span
-                className={`px-1.5 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 ${
+                className={`px-1.5 py-0.5 rounded-lg text-[10px] font-medium border flex items-center gap-1 ${
                   authConfigured
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                     : 'bg-zinc-900 text-zinc-500 border-zinc-800'
@@ -626,7 +626,7 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
             </div>
 
             <span
-              className={`px-1.5 py-0.5 rounded text-[10px] font-medium border flex items-center gap-1 w-fit ${
+              className={`px-1.5 py-0.5 rounded-lg text-[10px] font-medium border flex items-center gap-1 w-fit ${
                 cronSwitchSuccess
                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                   : 'bg-zinc-900 text-zinc-500 border-zinc-800'
