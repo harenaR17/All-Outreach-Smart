@@ -459,6 +459,13 @@ export async function createAdminUser(input: {
   }
 }
 
+/** Shape of a single Edge Function's reachability check, as classified by `checkFunc` below. */
+export interface EdgeFunctionVerification {
+  reachable: boolean
+  status?: number
+  error?: string
+}
+
 /**
  * 5. Verify background cron workers health.
  *
@@ -468,16 +475,37 @@ export async function createAdminUser(input: {
  * the UI can tell a genuine 401 (JWT/auth misconfiguration) apart from a 404
  * (not deployed under this slug/URL) or a 5xx (function deployed but
  * throwing at runtime).
+ *
+ * Generic over `slugs` — defaults to the same disk enumeration used by
+ * `deployEdgeFunctions` / `configureEdgeFunctionsAuth` /
+ * `switchCronToEdgeFunctions`, so a new function directory (e.g.
+ * `thread-sync`) gets a live verification result automatically with no code
+ * change here. If disk enumeration isn't possible in the current runtime
+ * (e.g. the deployed Cloudflare Workers instance, which doesn't ship
+ * `supabase/functions/**`), falls back to the historical two-slug set
+ * (`sender`, `reply-checker`) so the health check keeps working rather than
+ * erroring outright.
+ *
+ * The return value is keyed by slug (`result['reply-checker']`, etc.) — the
+ * new generic shape consumers should migrate to. For backward compatibility
+ * with existing callers (notably `StepEdgeFunctions.tsx`, until it migrates
+ * in a follow-up — see #17), the two legacy named fields `sender` /
+ * `replyChecker` are also spread at the top level, mirroring the keyed
+ * entries for `sender` / `reply-checker`. Once #17 lands and the UI reads
+ * the keyed record directly, the two legacy fields can be dropped.
  */
 export async function verifyEdgeFunctions(input: {
   supabaseUrl: string
   cronSecret: string
   appUrl?: string
   anonKey?: string
-}): Promise<{
-  sender: { reachable: boolean; status?: number; error?: string }
-  replyChecker: { reachable: boolean; status?: number; error?: string }
-}> {
+  slugs?: string[]
+}): Promise<
+  Record<string, EdgeFunctionVerification> & {
+    sender: EdgeFunctionVerification
+    replyChecker: EdgeFunctionVerification
+  }
+> {
   const cleanUrl = input.supabaseUrl.trim().replace(/\/$/, '')
   const cronSecret = input.cronSecret.trim()
   const appUrl = input.appUrl?.trim().replace(/\/$/, '')
@@ -490,7 +518,7 @@ export async function verifyEdgeFunctions(input: {
     return `Unexpected HTTP ${status}`
   }
 
-  const checkFunc = async (name: string) => {
+  const checkFunc = async (name: string): Promise<EdgeFunctionVerification> => {
     // 1. Primary: deployed Supabase Edge Function URL
     try {
       const headers: Record<string, string> = {
@@ -546,12 +574,28 @@ export async function verifyEdgeFunctions(input: {
     }
   }
 
-  const [sender, replyChecker] = await Promise.all([
-    checkFunc('sender'),
-    checkFunc('reply-checker'),
-  ])
+  let slugs = input.slugs
+  if (!slugs || slugs.length === 0) {
+    try {
+      slugs = await listEdgeFunctionSlugs()
+    } catch {
+      // Disk enumeration unavailable in this runtime (e.g. deployed Cloudflare Workers
+      // instance) — fall back to the historical two-slug set rather than erroring out.
+      slugs = ['sender', 'reply-checker']
+    }
+  }
 
-  return { sender, replyChecker }
+  const results = Object.fromEntries(
+    await Promise.all(slugs.map(async (slug) => [slug, await checkFunc(slug)] as const))
+  ) as Record<string, EdgeFunctionVerification>
+
+  // Legacy named fields for backward compatibility with callers that haven't migrated to the
+  // keyed record yet (see #17). Fall back to an "unreachable" placeholder if `slugs` was passed
+  // explicitly without these two entries, so the shape is always fully populated.
+  const sender = results.sender ?? { reachable: false, error: 'Not checked' }
+  const replyChecker = results['reply-checker'] ?? { reachable: false, error: 'Not checked' }
+
+  return { ...results, sender, replyChecker }
 }
 
 /**
