@@ -508,7 +508,12 @@ export function CampaignStudio({
             <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
             Campaign Analytics
           </h3>
-          <CampaignAnalyticsTab stats={activityStats} events={activityEvents} />
+          <CampaignAnalyticsTab
+            stats={activityStats}
+            events={activityEvents}
+            campaignLeads={campaignLeads}
+            steps={campaign.steps}
+          />
         </div>
       )}
     </div>

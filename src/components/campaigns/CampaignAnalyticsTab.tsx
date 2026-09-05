@@ -2,14 +2,18 @@
 
 import { MessageSquare, Sparkles, TrendingUp } from 'lucide-react'
 import type { ActivityEvent, ActivitySummaryStats } from '@/app/actions/activity'
-import { ActivityFeed } from '@/components/activity/ActivityFeed'
+import type { CampaignLeadItem } from '@/app/actions/campaigns'
+import type { CampaignStep } from '@/lib/types/database'
+import { CampaignActivityFeed } from '@/components/campaigns/CampaignActivityFeed'
 
 interface Props {
   stats: ActivitySummaryStats
   events: ActivityEvent[]
+  campaignLeads: CampaignLeadItem[]
+  steps: CampaignStep[]
 }
 
-export function CampaignAnalyticsTab({ stats, events }: Props) {
+export function CampaignAnalyticsTab({ stats, events, campaignLeads, steps }: Props) {
   const replyRate = stats.totalSends > 0 ? ((stats.totalReplies / stats.totalSends) * 100).toFixed(1) : '0.0'
   const positiveReplyRate = (stats.positiveReplyRate * 100).toFixed(1)
 
@@ -63,7 +67,7 @@ export function CampaignAnalyticsTab({ stats, events }: Props) {
           <h3 className="text-sm font-semibold text-zinc-100">Live Activity</h3>
           <p className="text-[11px] text-zinc-500">Today&apos;s pace alongside the full send &amp; reply log</p>
         </div>
-        <ActivityFeed initialEvents={events} stats={stats} />
+        <CampaignActivityFeed initialEvents={events} stats={stats} campaignLeads={campaignLeads} steps={steps} />
       </div>
     </div>
   )
