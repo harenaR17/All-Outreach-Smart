@@ -26,7 +26,7 @@ export function CampaignAnalyticsTab({ stats, events, campaignLeads, steps }: Pr
           <p className="text-[11px] text-zinc-500">Lifetime totals for this campaign</p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span>Reply Rate</span>
               <MessageSquare className="w-4 h-4 text-indigo-400" />
@@ -37,7 +37,7 @@ export function CampaignAnalyticsTab({ stats, events, campaignLeads, steps }: Pr
             <p className="text-[11px] text-zinc-500">{stats.totalReplies} replies of {stats.totalSends} sends</p>
           </div>
 
-          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span>Positive Replies</span>
               <Sparkles className="w-4 h-4 text-emerald-400" />
@@ -48,7 +48,7 @@ export function CampaignAnalyticsTab({ stats, events, campaignLeads, steps }: Pr
             <p className="text-[11px] text-zinc-500">Replies classified as interested</p>
           </div>
 
-          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span>Positive Reply Rate</span>
               <TrendingUp className="w-4 h-4 text-emerald-400" />

@@ -41,7 +41,7 @@ export function LeadsManager({
     <div className="space-y-6">
       {/* Top Stats Overview */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-1.5">
+        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 space-y-1.5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Global Leads Pool</span>
             <Users className="w-4 h-4 text-indigo-400" />
@@ -50,7 +50,7 @@ export function LeadsManager({
           <p className="text-[11px] text-zinc-400">Total deduplicated contacts</p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-1.5">
+        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 space-y-1.5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Active Outreach Target</span>
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -59,7 +59,7 @@ export function LeadsManager({
           <p className="text-[11px] text-zinc-400">Eligible for campaign sequences</p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-1.5">
+        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 space-y-1.5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Do Not Contact / Bounced</span>
             <ShieldBan className="w-4 h-4 text-amber-400" />
@@ -70,7 +70,7 @@ export function LeadsManager({
           </p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-1.5">
+        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 space-y-1.5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Spreadsheets Imported</span>
             <FileSpreadsheet className="w-4 h-4 text-cyan-400" />
@@ -85,11 +85,10 @@ export function LeadsManager({
         <div className="flex items-center gap-2 p-1 rounded-xl bg-zinc-950 border border-zinc-800">
           <button
             onClick={() => setActiveTab('leads')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === 'leads'
-                ? 'bg-zinc-800 text-zinc-100 shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${activeTab === 'leads'
+              ? 'bg-zinc-800 text-zinc-100 shadow-sm'
+              : 'text-zinc-400 hover:text-zinc-200'
+              }`}
           >
             <Users className="w-3.5 h-3.5" />
             <span>Global Leads Explorer ({initialLeads.length})</span>
@@ -97,11 +96,10 @@ export function LeadsManager({
 
           <button
             onClick={() => setActiveTab('history')}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === 'history'
-                ? 'bg-zinc-800 text-zinc-100 shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200'
-            }`}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${activeTab === 'history'
+              ? 'bg-zinc-800 text-zinc-100 shadow-sm'
+              : 'text-zinc-400 hover:text-zinc-200'
+              }`}
           >
             <History className="w-3.5 h-3.5" />
             <span>Import History ({imports.length})</span>

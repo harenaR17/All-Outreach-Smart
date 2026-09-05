@@ -447,213 +447,213 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
                         </td>
                       </tr>
                       {items.map((item) => {
-                    const company = (item.variables?.company as string) || (item.variables?.Company as string)
-                    const firstName = (item.variables?.first_name as string) || (item.variables?.Name as string)
-                    const currentCategory = item.latest_reply?.llm_category
-                    const isRowUpdating = updatingLeadId === item.id
-                    const isSelected = selectedIds.has(item.id)
+                        const company = (item.variables?.company as string) || (item.variables?.Company as string)
+                        const firstName = (item.variables?.first_name as string) || (item.variables?.Name as string)
+                        const currentCategory = item.latest_reply?.llm_category
+                        const isRowUpdating = updatingLeadId === item.id
+                        const isSelected = selectedIds.has(item.id)
 
-                    return (
-                      <tr
-                        key={item.id}
-                        className={`hover:bg-zinc-900/40 transition-colors ${isSelected ? 'bg-indigo-950/20' : ''}`}
-                      >
-                        {/* Checkbox */}
-                        <td className="w-10 py-3.5 px-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSelectOne(item.id)}
-                            className="text-zinc-500 hover:text-zinc-300 flex items-center justify-center mx-auto cursor-pointer"
+                        return (
+                          <tr
+                            key={item.id}
+                            className={`hover:bg-zinc-600/40 transition-colors ${isSelected ? 'bg-indigo-950/20' : ''}`}
                           >
-                            {isSelected ? (
-                              <CheckSquare className="w-4 h-4 text-indigo-400" />
-                            ) : (
-                              <Square className="w-4 h-4 text-zinc-700" />
-                            )}
-                          </button>
-                        </td>
-
-                        {/* Lead Details */}
-                        <td className="py-3.5 px-4 space-y-0.5">
-                          <div className="font-medium text-zinc-100 flex items-center gap-1.5">
-                            <span>{item.email}</span>
-                          </div>
-                          <div className="text-[11px] text-zinc-500 flex items-center gap-2">
-                            {firstName && <span>{firstName}</span>}
-                            {firstName && company && <span>•</span>}
-                            {company && <span className="text-zinc-400">{company}</span>}
-                          </div>
-                        </td>
-
-                        {/* Current Step Progress */}
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-200">
-                              Step {item.current_step + 1} of {Math.max(totalSteps, 1)}
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Status */}
-                        <td className="py-3.5 px-4">
-                          {item.status === 'active' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                              <Clock className="w-3 h-3" />
-                              Active
-                            </span>
-                          )}
-                          {item.status === 'replied' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              <CheckCircle2 className="w-3 h-3" />
-                              Replied
-                            </span>
-                          )}
-                          {item.status === 'pending' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
-                              Pending
-                            </span>
-                          )}
-                          {item.status === 'bounced' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
-                              <AlertCircle className="w-3 h-3" />
-                              Bounced
-                            </span>
-                          )}
-                          {item.status === 'completed' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                              Completed
-                            </span>
-                          )}
-                          {item.status === 'paused' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                              <PauseCircle className="w-3 h-3" />
-                              Paused
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Reply Classification & Manual Override */}
-                        <td className="py-3.5 px-4 max-w-xs">
-                          {item.status === 'replied' || item.latest_reply ? (
-                            <div className="space-y-1">
-                              <select
-                                value={currentCategory || 'undefined'}
-                                onChange={(e) =>
-                                  handleStateUpdate(item.id, {
-                                    reply_category: e.target.value as any,
-                                    campaignId: item.campaign_id,
-                                  })
-                                }
-                                disabled={isPending}
-                                className="px-2 py-0.5 rounded text-[10px] font-semibold bg-zinc-900 border border-zinc-800 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            {/* Checkbox */}
+                            <td className="w-10 py-3.5 px-4 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleSelectOne(item.id)}
+                                className="text-zinc-500 hover:text-zinc-300 flex items-center justify-center mx-auto cursor-pointer"
                               >
-                                <option value="interested">🎯 Interested</option>
-                                <option value="not_interested">🛑 Not Interested</option>
-                                <option value="wrong_person">🔄 Wrong Person</option>
-                                <option value="out_of_office">🏖️ Out of Office</option>
-                                <option value="undefined">❓ Undefined</option>
-                              </select>
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-indigo-400" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-zinc-700" />
+                                )}
+                              </button>
+                            </td>
 
-                              {item.latest_reply?.snippet && (
-                                <p className="text-[11px] text-zinc-400 truncate max-w-xs" title={item.latest_reply.snippet}>
-                                  &ldquo;{item.latest_reply.snippet}&rdquo;
-                                </p>
+                            {/* Lead Details */}
+                            <td className="py-3.5 px-4 space-y-0.5">
+                              <div className="font-medium text-zinc-100 flex items-center gap-1.5">
+                                <span>{item.email}</span>
+                              </div>
+                              <div className="text-[11px] text-zinc-500 flex items-center gap-2">
+                                {firstName && <span>{firstName}</span>}
+                                {firstName && company && <span>•</span>}
+                                {company && <span className="text-zinc-400">{company}</span>}
+                              </div>
+                            </td>
+
+                            {/* Current Step Progress */}
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-200">
+                                  Step {item.current_step + 1} of {Math.max(totalSteps, 1)}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* Status */}
+                            <td className="py-3.5 px-4">
+                              {item.status === 'active' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                  <Clock className="w-3 h-3" />
+                                  Active
+                                </span>
                               )}
-                            </div>
-                          ) : item.latest_send?.status === 'failed' ? (
-                            <div className="space-y-0.5">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-400">
-                                <AlertTriangle className="w-3 h-3" />
-                                Send Error
-                              </span>
-                              <p className="text-[10px] text-rose-400/80 truncate max-w-xs" title={item.latest_send.error_message || ''}>
-                                {item.latest_send.error_message}
-                              </p>
-                            </div>
-                          ) : (
-                            <span className="text-[11px] text-zinc-600">—</span>
-                          )}
-                        </td>
+                              {item.status === 'replied' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Replied
+                                </span>
+                              )}
+                              {item.status === 'pending' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                                  Pending
+                                </span>
+                              )}
+                              {item.status === 'bounced' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                                  <AlertCircle className="w-3 h-3" />
+                                  Bounced
+                                </span>
+                              )}
+                              {item.status === 'completed' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                  Completed
+                                </span>
+                              )}
+                              {item.status === 'paused' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                  <PauseCircle className="w-3 h-3" />
+                                  Paused
+                                </span>
+                              )}
+                            </td>
 
-                        {/* Inbox */}
-                        <td className="py-3.5 px-4 text-zinc-400 font-mono text-[11px]">
-                          {item.inbox_email || '—'}
-                        </td>
-
-                        {/* Next Send Time */}
-                        <td className="py-3.5 px-4 text-[11px] text-zinc-400">
-                          {item.status === 'active' && item.next_send_at ? (
-                            <span className="text-indigo-300">{formatDate(item.next_send_at)}</span>
-                          ) : item.status === 'replied' && item.replied_at ? (
-                            <span className="text-emerald-400/80">Replied {formatDate(item.replied_at)}</span>
-                          ) : (
-                            <span className="text-zinc-600">—</span>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {isRowUpdating ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                            ) : (
-                              <>
-                                {/* Edit Lead */}
-                                <button
-                                  onClick={() => setEditingLead(toLead(item))}
-                                  disabled={isPending}
-                                  title="Edit contact details & variables"
-                                  className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-
-                                {/* Pause / Resume */}
-                                {item.status === 'paused' ? (
-                                  <button
-                                    onClick={() => handleStateUpdate(item.id, { status: 'pending', campaignId: item.campaign_id })}
+                            {/* Reply Classification & Manual Override */}
+                            <td className="py-3.5 px-4 max-w-xs">
+                              {item.status === 'replied' || item.latest_reply ? (
+                                <div className="space-y-1">
+                                  <select
+                                    value={currentCategory || 'undefined'}
+                                    onChange={(e) =>
+                                      handleStateUpdate(item.id, {
+                                        reply_category: e.target.value as any,
+                                        campaignId: item.campaign_id,
+                                      })
+                                    }
                                     disabled={isPending}
-                                    title="Resume Sequence"
-                                    className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer"
+                                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-zinc-900 border border-zinc-800 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                                   >
-                                    <Play className="w-3.5 h-3.5" />
-                                  </button>
-                                ) : item.status === 'pending' || item.status === 'active' ? (
-                                  <button
-                                    onClick={() => handleStateUpdate(item.id, { status: 'paused', campaignId: item.campaign_id })}
-                                    disabled={isPending}
-                                    title="Pause Sequence"
-                                    className="p-1.5 rounded-lg text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
-                                  >
-                                    <PauseCircle className="w-3.5 h-3.5" />
-                                  </button>
-                                ) : null}
+                                    <option value="interested">🎯 Interested</option>
+                                    <option value="not_interested">🛑 Not Interested</option>
+                                    <option value="wrong_person">🔄 Wrong Person</option>
+                                    <option value="out_of_office">🏖️ Out of Office</option>
+                                    <option value="undefined">❓ Undefined</option>
+                                  </select>
 
-                                {/* Restart Sequence */}
-                                <button
-                                  onClick={() => handleRestart(item.id, item.email, item.campaign_id)}
-                                  disabled={isPending}
-                                  title="Restart sequence from Step 1"
-                                  className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer"
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5" />
-                                </button>
+                                  {item.latest_reply?.snippet && (
+                                    <p className="text-[11px] text-zinc-400 truncate max-w-xs" title={item.latest_reply.snippet}>
+                                      &ldquo;{item.latest_reply.snippet}&rdquo;
+                                    </p>
+                                  )}
+                                </div>
+                              ) : item.latest_send?.status === 'failed' ? (
+                                <div className="space-y-0.5">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-400">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    Send Error
+                                  </span>
+                                  <p className="text-[10px] text-rose-400/80 truncate max-w-xs" title={item.latest_send.error_message || ''}>
+                                    {item.latest_send.error_message}
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="text-[11px] text-zinc-600">—</span>
+                              )}
+                            </td>
 
-                                {/* Remove from Campaign */}
-                                <button
-                                  onClick={() => handleRemove(item.id, item.email, item.campaign_id)}
-                                  disabled={isPending}
-                                  title="Remove from Campaign (Keeps lead in global pool)"
-                                  className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                                >
-                                  <UserMinus className="w-3.5 h-3.5" />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
+                            {/* Inbox */}
+                            <td className="py-3.5 px-4 text-zinc-400 font-mono text-[11px]">
+                              {item.inbox_email || '—'}
+                            </td>
+
+                            {/* Next Send Time */}
+                            <td className="py-3.5 px-4 text-[11px] text-zinc-400">
+                              {item.status === 'active' && item.next_send_at ? (
+                                <span className="text-indigo-300">{formatDate(item.next_send_at)}</span>
+                              ) : item.status === 'replied' && item.replied_at ? (
+                                <span className="text-emerald-400/80">Replied {formatDate(item.replied_at)}</span>
+                              ) : (
+                                <span className="text-zinc-600">—</span>
+                              )}
+                            </td>
+
+                            {/* Actions */}
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                {isRowUpdating ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                                ) : (
+                                  <>
+                                    {/* Edit Lead */}
+                                    <button
+                                      onClick={() => setEditingLead(toLead(item))}
+                                      disabled={isPending}
+                                      title="Edit contact details & variables"
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Pause / Resume */}
+                                    {item.status === 'paused' ? (
+                                      <button
+                                        onClick={() => handleStateUpdate(item.id, { status: 'pending', campaignId: item.campaign_id })}
+                                        disabled={isPending}
+                                        title="Resume Sequence"
+                                        className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors cursor-pointer"
+                                      >
+                                        <Play className="w-3.5 h-3.5" />
+                                      </button>
+                                    ) : item.status === 'pending' || item.status === 'active' ? (
+                                      <button
+                                        onClick={() => handleStateUpdate(item.id, { status: 'paused', campaignId: item.campaign_id })}
+                                        disabled={isPending}
+                                        title="Pause Sequence"
+                                        className="p-1.5 rounded-lg text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                                      >
+                                        <PauseCircle className="w-3.5 h-3.5" />
+                                      </button>
+                                    ) : null}
+
+                                    {/* Restart Sequence */}
+                                    <button
+                                      onClick={() => handleRestart(item.id, item.email, item.campaign_id)}
+                                      disabled={isPending}
+                                      title="Restart sequence from Step 1"
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer"
+                                    >
+                                      <RotateCcw className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Remove from Campaign */}
+                                    <button
+                                      onClick={() => handleRemove(item.id, item.email, item.campaign_id)}
+                                      disabled={isPending}
+                                      title="Remove from Campaign (Keeps lead in global pool)"
+                                      className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                    >
+                                      <UserMinus className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
                       })}
                     </Fragment>
                   ))}

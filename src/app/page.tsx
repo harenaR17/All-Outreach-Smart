@@ -168,7 +168,7 @@ export default async function DashboardPage() {
 
         {/* Reply Rate & Intelligence */}
         <Link
-          href="/activity"
+          href="/smartbox"
           className="group rounded-2xl bg-zinc-900/50 border border-zinc-800/80 hover:border-zinc-700/80 p-5 space-y-3 transition-all hover:bg-zinc-900/70"
         >
           <div className="flex items-center justify-between">

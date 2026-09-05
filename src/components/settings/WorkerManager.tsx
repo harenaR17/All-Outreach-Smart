@@ -141,7 +141,7 @@ export function WorkerManager({ hasCronSecret = true, cronSecretPreview }: Props
   const replyCheckerEndpoint = `${origin || ''}/api/cron/reply-checker`
 
   return (
-    <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800 p-6 space-y-6">
+    <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800  hover:border-indigo-700 p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div className="space-y-1">
@@ -247,7 +247,7 @@ export function WorkerManager({ hasCronSecret = true, cronSecretPreview }: Props
       {/* Workers Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ─── 1. Outreach Sender Worker ─────────────────────────────────── */}
-        <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/90 p-5 space-y-4 flex flex-col justify-between">
+        <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/90  hover:border-emerald-700 p-5 space-y-4 flex flex-col justify-between">
           <div className="space-y-3">
             {/* Top row */}
             <div className="flex items-start justify-between gap-3">
@@ -340,11 +340,10 @@ export function WorkerManager({ hasCronSecret = true, cronSecretPreview }: Props
             {/* Ping Message */}
             {senderState.pingMessage && (
               <div
-                className={`p-2.5 rounded-lg text-xs flex items-center justify-between ${
-                  senderState.pingStatus === 'success'
-                    ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
-                    : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
-                }`}
+                className={`p-2.5 rounded-lg text-xs flex items-center justify-between ${senderState.pingStatus === 'success'
+                  ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                  : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
+                  }`}
               >
                 <div className="flex items-center gap-2">
                   {senderState.pingStatus === 'success' ? (
@@ -414,7 +413,7 @@ export function WorkerManager({ hasCronSecret = true, cronSecretPreview }: Props
         </div>
 
         {/* ─── 2. Reply Checker & AI Classifier Worker ──────────────────── */}
-        <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/90 p-5 space-y-4 flex flex-col justify-between">
+        <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/90  hover:border-emerald-700 p-5 space-y-4 flex flex-col justify-between">
           <div className="space-y-3">
             {/* Top row */}
             <div className="flex items-start justify-between gap-3">
@@ -507,11 +506,10 @@ export function WorkerManager({ hasCronSecret = true, cronSecretPreview }: Props
             {/* Ping Message */}
             {replyCheckerState.pingMessage && (
               <div
-                className={`p-2.5 rounded-lg text-xs flex items-center justify-between ${
-                  replyCheckerState.pingStatus === 'success'
-                    ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
-                    : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
-                }`}
+                className={`p-2.5 rounded-lg text-xs flex items-center justify-between ${replyCheckerState.pingStatus === 'success'
+                  ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20'
+                  : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'
+                  }`}
               >
                 <div className="flex items-center gap-2">
                   {replyCheckerState.pingStatus === 'success' ? (

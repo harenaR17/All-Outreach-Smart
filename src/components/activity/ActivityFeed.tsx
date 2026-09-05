@@ -86,7 +86,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
       {/* Deliverability & Activity KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Sends Today */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Sends Today</span>
             <Send className="w-4 h-4 text-indigo-400" />
@@ -99,7 +99,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
         </div>
 
         {/* Replies Received */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Replies Received</span>
             <MessageSquare className="w-4 h-4 text-emerald-400" />
@@ -116,7 +116,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
         </div>
 
         {/* Bounces */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Bounces</span>
             <AlertCircle className="w-4 h-4 text-amber-400" />
@@ -129,7 +129,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
         </div>
 
         {/* Failed Sends */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Failed Sends / Issues</span>
             <AlertTriangle className="w-4 h-4 text-rose-400" />
@@ -145,7 +145,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
       </div>
 
       {/* Tabs & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-indigo-700">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
           <input
@@ -210,7 +210,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
                 return (
                   <div
                     key={ev.id}
-                    className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-900/30 transition-colors"
+                    className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-600/30 transition-colors"
                   >
                     {/* Left: Type Icon + Lead Details */}
                     <div className="flex items-start gap-3 flex-1 min-w-0">

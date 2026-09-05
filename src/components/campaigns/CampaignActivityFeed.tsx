@@ -133,7 +133,7 @@ export function CampaignActivityFeed({ initialEvents, stats, campaignLeads, step
       {/* Deliverability & Activity KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Sends Today */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Sends Today</span>
             <Send className="w-4 h-4 text-indigo-400" />
@@ -146,7 +146,7 @@ export function CampaignActivityFeed({ initialEvents, stats, campaignLeads, step
         </div>
 
         {/* Replies Received */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Replies Received</span>
             <MessageSquare className="w-4 h-4 text-emerald-400" />
@@ -163,7 +163,7 @@ export function CampaignActivityFeed({ initialEvents, stats, campaignLeads, step
         </div>
 
         {/* Bounces */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Bounces</span>
             <AlertCircle className="w-4 h-4 text-amber-400" />
@@ -176,7 +176,7 @@ export function CampaignActivityFeed({ initialEvents, stats, campaignLeads, step
         </div>
 
         {/* Failed Sends */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Failed Sends / Issues</span>
             <AlertTriangle className="w-4 h-4 text-rose-400" />
@@ -205,7 +205,7 @@ export function CampaignActivityFeed({ initialEvents, stats, campaignLeads, step
             {orderedSteps.map((step, idx) => {
               const activeCount = stepActiveCounts[idx] || 0
               return (
-                <div key={step.id} className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+                <div key={step.id} className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
                   <div className="flex items-center justify-between text-xs text-zinc-400">
                     <span>Step {step.step_order} of {orderedSteps.length}</span>
                     <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
