@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react'
 import {
-  Layers, Inbox, Settings, Globe, Clock, Users, Send, Check, Zap, BarChart3, Building2
+  Layers, Inbox, Settings, Globe, Clock, Users, Send, Check, Zap, BarChart3, Building2, Copy
 } from 'lucide-react'
 import type { CampaignDetail, SaveCampaignInput, SaveStepInput, CampaignLeadItem } from '@/app/actions/campaigns'
 import type { EmailAccount, Lead, Campaign, TelegramRecipient } from '@/lib/types/database'
@@ -83,6 +83,18 @@ export function CampaignStudio({
   )
   const [selectedInboxIds, setSelectedInboxIds] = useState<string[]>(campaign.inboxIds)
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>(campaign.recipientIds || [])
+  const [copiedId, setCopiedId] = useState(false)
+
+  const handleCopyId = useCallback(async () => {
+    if (!campaign.id) return
+    try {
+      await navigator.clipboard.writeText(campaign.id)
+      setCopiedId(true)
+      setTimeout(() => setCopiedId(false), 2000)
+    } catch {
+      // fallback
+    }
+  }, [campaign.id])
 
   // Track unsaved changes
   const initialState = useRef({
@@ -161,18 +173,38 @@ export function CampaignStudio({
 
   return (
     <div className="space-y-5">
-      {/* Campaign Name (editable in header) */}
-      {!isReadOnly ? (
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={isReadOnly}
-          className="w-full px-0 py-1 bg-transparent text-2xl font-bold text-zinc-100 border-b border-transparent hover:border-zinc-700 focus:border-indigo-500 outline-none transition-colors"
-        />
-      ) : (
-        <h2 className="text-2xl font-bold text-zinc-100">{name}</h2>
-      )}
+      {/* Campaign Name & ID (editable in header) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          {!isReadOnly ? (
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={isReadOnly}
+              className="w-full px-0 py-1 bg-transparent text-2xl font-bold text-zinc-100 border-b border-transparent hover:border-zinc-700 focus:border-indigo-500 outline-none transition-colors"
+            />
+          ) : (
+            <h2 className="text-2xl font-bold text-zinc-100">{name}</h2>
+          )}
+        </div>
+
+        {/* Copy Campaign ID Button */}
+        <button
+          type="button"
+          onClick={handleCopyId}
+          className="self-start sm:self-center inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-all cursor-pointer shrink-0"
+          title={`Click to copy: ${campaign.id}`}
+        >
+          <span className="text-zinc-500 text-[11px]">ID:</span>
+          <span>{copiedId ? 'Copied!' : `${campaign.id.slice(0, 8)}...`}</span>
+          {copiedId ? (
+            <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          ) : (
+            <Copy className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+          )}
+        </button>
+      </div>
 
       {/* Action Bar */}
       <CampaignActionBar
@@ -508,7 +540,12 @@ export function CampaignStudio({
             <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
             Campaign Analytics
           </h3>
-          <CampaignAnalyticsTab stats={activityStats} events={activityEvents} />
+          <CampaignAnalyticsTab
+            stats={activityStats}
+            events={activityEvents}
+            campaignLeads={campaignLeads}
+            steps={campaign.steps}
+          />
         </div>
       )}
     </div>

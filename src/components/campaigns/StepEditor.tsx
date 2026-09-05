@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Mail, Zap } from 'lucide-react'
 import type { SaveStepInput } from '@/app/actions/campaigns'
 
@@ -21,6 +21,84 @@ interface Props {
   onChange: (steps: SaveStepInput[]) => void
   disabled?: boolean
   availableTokens?: string[]  // extra tokens from leads
+}
+
+/**
+ * Dropdown trigger ("S" or "B") that opens a popover listing `tokens`;
+ * clicking a row calls `onSelect(token)` and closes the popover.
+ * Mirrors the burger filter menu pattern in SmartBoxManager.tsx.
+ */
+function TokenDropdown({
+  label,
+  tokens,
+  onSelect,
+  tone,
+  disabled,
+}: {
+  label: 'S' | 'B'
+  tokens: string[]
+  onSelect: (token: string) => void
+  tone: 'lead' | 'sender'
+  disabled?: boolean
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const isSender = tone === 'sender'
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen])
+
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setIsOpen((o) => !o)}
+        disabled={disabled}
+        title={label === 'S' ? 'Insert into Subject' : 'Insert into Body'}
+        className={`px-2 py-1 text-[10px] font-mono rounded-lg border transition-colors cursor-pointer disabled:opacity-40 ${
+          isSender
+            ? 'bg-indigo-950/60 border-indigo-500/20 text-indigo-400/70 hover:text-indigo-300 hover:border-indigo-500/50'
+            : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-indigo-300 hover:border-indigo-500/40'
+        }`}
+      >
+        {label}
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1.5 w-48 rounded-2xl bg-zinc-950 border border-zinc-800 shadow-2xl z-20 p-1.5 animate-in fade-in duration-200">
+          <div className="h-[196px] overflow-y-auto space-y-0.5">
+            {tokens.map((tok) => (
+              <button
+                key={tok}
+                type="button"
+                onClick={() => {
+                  onSelect(tok)
+                  setIsOpen(false)
+                }}
+                className={`w-full h-7 shrink-0 text-left px-2.5 rounded-lg text-[10px] font-mono transition-colors cursor-pointer ${
+                  isSender
+                    ? 'text-indigo-300/80 hover:bg-indigo-500/10 hover:text-indigo-300'
+                    : 'text-zinc-300 hover:bg-zinc-800 hover:text-indigo-300'
+                }`}
+              >
+                {`{{${tok}}}`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function StepEditor({ steps, onChange, disabled, availableTokens = [] }: Props) {
@@ -164,67 +242,41 @@ export function StepEditor({ steps, onChange, disabled, availableTokens = [] }: 
                 {/* Quick Token Inserter */}
                 <div className="space-y-2">
                   {/* Lead Variables */}
-                  <div className="space-y-1">
+                  <div className="flex items-center gap-2">
                     <span className="text-[10px] text-zinc-500 font-medium">Lead variables:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {leadTokens.map((tok) => (
-                        <div key={tok} className="flex">
-                          <button
-                            type="button"
-                            onClick={() => insertToken(index, 'subject_template', tok)}
-                            disabled={disabled}
-                            className="px-1.5 py-0.5 text-[10px] font-mono rounded-l bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-indigo-300 hover:border-indigo-500/40 transition-colors cursor-pointer"
-                            title="Insert into Subject"
-                          >
-                            S
-                          </button>
-                          <span className="px-2 py-0.5 text-[10px] font-mono bg-zinc-900 border-y border-zinc-700 text-zinc-300">
-                            {`{{${tok}}}`}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => insertToken(index, 'body_template', tok)}
-                            disabled={disabled}
-                            className="px-1.5 py-0.5 text-[10px] font-mono rounded-r bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-indigo-300 hover:border-indigo-500/40 transition-colors cursor-pointer"
-                            title="Insert into Body"
-                          >
-                            B
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                    <TokenDropdown
+                      label="S"
+                      tokens={leadTokens}
+                      onSelect={(tok) => insertToken(index, 'subject_template', tok)}
+                      tone="lead"
+                      disabled={disabled}
+                    />
+                    <TokenDropdown
+                      label="B"
+                      tokens={leadTokens}
+                      onSelect={(tok) => insertToken(index, 'body_template', tok)}
+                      tone="lead"
+                      disabled={disabled}
+                    />
                   </div>
 
                   {/* Sender / Inbox Variables */}
-                  <div className="space-y-1">
+                  <div className="flex items-center gap-2">
                     <span className="text-[10px] text-indigo-400/70 font-medium">Sender variables:</span>
-                    <div className="flex flex-wrap gap-1">
-                      {SENDER_TOKENS.map((tok) => (
-                        <div key={tok} className="flex">
-                          <button
-                            type="button"
-                            onClick={() => insertToken(index, 'subject_template', tok)}
-                            disabled={disabled}
-                            className="px-1.5 py-0.5 text-[10px] font-mono rounded-l bg-indigo-950/60 border border-indigo-500/20 text-indigo-400/70 hover:text-indigo-300 hover:border-indigo-500/50 transition-colors cursor-pointer"
-                            title="Insert into Subject"
-                          >
-                            S
-                          </button>
-                          <span className="px-2 py-0.5 text-[10px] font-mono bg-indigo-950/30 border-y border-indigo-500/20 text-indigo-300/80">
-                            {`{{${tok}}}`}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => insertToken(index, 'body_template', tok)}
-                            disabled={disabled}
-                            className="px-1.5 py-0.5 text-[10px] font-mono rounded-r bg-indigo-950/60 border border-indigo-500/20 text-indigo-400/70 hover:text-indigo-300 hover:border-indigo-500/50 transition-colors cursor-pointer"
-                            title="Insert into Body"
-                          >
-                            B
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                    <TokenDropdown
+                      label="S"
+                      tokens={SENDER_TOKENS}
+                      onSelect={(tok) => insertToken(index, 'subject_template', tok)}
+                      tone="sender"
+                      disabled={disabled}
+                    />
+                    <TokenDropdown
+                      label="B"
+                      tokens={SENDER_TOKENS}
+                      onSelect={(tok) => insertToken(index, 'body_template', tok)}
+                      tone="sender"
+                      disabled={disabled}
+                    />
                   </div>
                 </div>
 

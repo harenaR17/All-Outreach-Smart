@@ -91,7 +91,7 @@ export function GeminiKeysManager({ initialKeys }: Props) {
   }
 
   return (
-    <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800 p-6 space-y-6">
+    <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800  hover:border-indigo-700 p-6 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
@@ -181,11 +181,10 @@ export function GeminiKeysManager({ initialKeys }: Props) {
       {/* Feedback message */}
       {feedback && (
         <div
-          className={`flex items-center gap-2 p-3 rounded-xl text-xs border ${
-            feedback.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-          }`}
+          className={`flex items-center gap-2 p-3 rounded-xl text-xs border ${feedback.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+            : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}
         >
           {feedback.type === 'success' ? (
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -204,21 +203,20 @@ export function GeminiKeysManager({ initialKeys }: Props) {
         <div className="text-xs font-medium text-zinc-400 px-1">Active Keys Pool ({keys.length})</div>
 
         {keys.length > 0 ? (
-          <div className="divide-y divide-zinc-800/60 rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950/40">
+          <div className="divide-y divide-zinc-800/60 rounded-xl border border-zinc-800 hover:border-emerald-700 overflow-hidden bg-zinc-950/40">
             {keys.map((k) => (
               <div
                 key={k.id}
-                className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-zinc-900/30 transition-colors"
+                className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-emerald-900/30 transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => handleToggle(k.id, k.is_active)}
-                    className={`w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${
-                      k.is_active
-                        ? 'bg-emerald-600 border-emerald-500 text-white'
-                        : 'bg-zinc-900 border-zinc-700 text-transparent'
-                    }`}
+                    className={`w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${k.is_active
+                      ? 'bg-emerald-600 border-emerald-500 text-white'
+                      : 'bg-zinc-900 border-zinc-700 text-transparent'
+                      }`}
                     title={k.is_active ? 'Active' : 'Inactive'}
                   >
                     <Check className="w-3 h-3" />
@@ -228,11 +226,10 @@ export function GeminiKeysManager({ initialKeys }: Props) {
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-medium text-zinc-200">{k.label || 'Unnamed Key'}</span>
                       <span
-                        className={`px-1.5 py-0.2 rounded text-[10px] font-medium border ${
-                          k.is_active
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            : 'bg-zinc-800 text-zinc-500 border-zinc-700'
-                        }`}
+                        className={`px-1.5 py-0.2 rounded text-[10px] font-medium border ${k.is_active
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+                          }`}
                       >
                         {k.is_active ? 'Active' : 'Disabled'}
                       </span>

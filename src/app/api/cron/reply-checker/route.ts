@@ -2,9 +2,13 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
 import { classifyReplyWithGemini, type GeminiKeyItem, type ReplyCategory } from '@/lib/llm/gemini'
 import { notifyAllRecipients, type TelegramRecipientItem } from '@/lib/telegram/notify'
-
-// ─── Module-level JWT token cache ───────────────────────────────────────────
-const tokenCache = new Map<string, { token: string; expiresAt: number }>()
+import {
+  getCachedGmailAccessToken,
+  getHeader,
+  extractPlainTextBody,
+  fetchGmailThread,
+  syncThreadMessages,
+} from '@/lib/google/gmail-thread'
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -32,31 +36,6 @@ interface CampaignLeadRow {
     email_address: string
     service_account_client_email: string
     service_account_private_key: string
-  }
-}
-
-interface GmailMessageHeader {
-  name: string
-  value: string
-}
-
-interface GmailMessagePart {
-  mimeType: string
-  body?: { data?: string }
-  parts?: GmailMessagePart[]
-}
-
-interface GmailMessage {
-  id: string
-  threadId: string
-  snippet?: string
-  labelIds?: string[]
-  internalDate?: string
-  payload?: {
-    headers?: GmailMessageHeader[]
-    mimeType?: string
-    body?: { data?: string }
-    parts?: GmailMessagePart[]
   }
 }
 
@@ -170,29 +149,27 @@ async function handleReplyChecker(req: NextRequest) {
         const stopOnAutoReply = campaign.stop_on_auto_reply ?? true
 
         // 4. Get Gmail access token
-        const token = await getAccessToken(
+        const token = await getCachedGmailAccessToken(
           inbox.service_account_client_email,
           inbox.service_account_private_key,
           inbox.email_address,
         )
 
         // 5. Fetch the Gmail thread
-        const threadRes = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/threads/${cl.thread_id}?format=full`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          },
-        )
-
+        const threadRes = await fetchGmailThread(cl.thread_id, token)
         if (!threadRes.ok) {
-          const errText = await threadRes.text()
-          results.errors.push(`Failed to fetch thread ${cl.thread_id}: ${errText}`)
+          results.errors.push(threadRes.error)
           continue
         }
 
-        const threadData = (await threadRes.json()) as { messages?: GmailMessage[] }
-        const messages = threadData.messages || []
+        const messages = threadRes.messages
         if (messages.length <= 1) continue
+
+        // Tracks whether any new non-bounce reply was logged for this lead in
+        // this run, so we can immediately sync the full thread into
+        // thread_messages once at the end instead of waiting for the next
+        // daily thread-sync run (SmartBox unified-inbox UI).
+        let hasNewNonBounceReply = false
 
         // 6. Inspect messages after the first outbound email
         for (let i = 1; i < messages.length; i++) {
@@ -288,6 +265,7 @@ async function handleReplyChecker(req: NextRequest) {
             }
 
             existingMsgIds.add(msg.id)
+            hasNewNonBounceReply = true
             continue
           }
 
@@ -323,6 +301,7 @@ async function handleReplyChecker(req: NextRequest) {
             }
 
             existingMsgIds.add(msg.id)
+            hasNewNonBounceReply = true
             continue
           }
 
@@ -354,6 +333,7 @@ async function handleReplyChecker(req: NextRequest) {
             .eq('id', cl.id)
 
           existingMsgIds.add(msg.id)
+          hasNewNonBounceReply = true
 
           // 3. Dispatch Telegram Notification
           const assignedIds = campaignRecipientsMap.get(campaign.id)
@@ -394,6 +374,17 @@ async function handleReplyChecker(req: NextRequest) {
             }
           }
         }
+
+        // 7. Immediate SmartBox thread sync: if this run logged a new
+        // non-bounce reply for this lead, persist the full thread (already
+        // fetched above) into thread_messages right now instead of waiting
+        // for the next daily thread-sync run.
+        if (hasNewNonBounceReply) {
+          const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address)
+          if (syncResult.error) {
+            results.errors.push(`thread_messages sync failed for lead ${cl.lead_id}: ${syncResult.error}`)
+          }
+        }
       } catch (leadErr) {
         results.errors.push(`Error processing thread for lead ${cl.leads?.email}: ${String(leadErr)}`)
       }
@@ -411,135 +402,4 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   return handleReplyChecker(req)
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getHeader(headers: GmailMessageHeader[], name: string): string | null {
-  const h = headers.find((item) => item.name.toLowerCase() === name.toLowerCase())
-  return h ? h.value : null
-}
-
-function extractPlainTextBody(payload?: GmailMessage['payload']): string {
-  if (!payload) return ''
-
-  if (payload.mimeType === 'text/plain' && payload.body?.data) {
-    return decodeBase64Url(payload.body.data)
-  }
-
-  if (payload.parts) {
-    for (const part of payload.parts) {
-      if (part.mimeType === 'text/plain' && part.body?.data) {
-        return decodeBase64Url(part.body.data)
-      }
-      if (part.parts) {
-        const nested = extractPlainTextBody(part as GmailMessage['payload'])
-        if (nested) return nested
-      }
-    }
-  }
-
-  return ''
-}
-
-function decodeBase64Url(b64url: string): string {
-  try {
-    const base64 = b64url.replace(/-/g, '+').replace(/_/g, '/')
-    return Buffer.from(base64, 'base64').toString('utf-8')
-  } catch {
-    return ''
-  }
-}
-
-// ─── Service Account JWT Token ───────────────────────────────────────────────
-
-async function getAccessToken(
-  clientEmail: string,
-  privateKeyPem: string,
-  subjectEmail: string,
-): Promise<string> {
-  const cacheKey = `${clientEmail}::${subjectEmail}`
-  const cached = tokenCache.get(cacheKey)
-
-  if (cached && cached.expiresAt - 60_000 > Date.now()) {
-    return cached.token
-  }
-
-  const nowSec = Math.floor(Date.now() / 1000)
-
-  const b64url = (obj: unknown): string =>
-    Buffer.from(JSON.stringify(obj))
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '')
-
-  const jwtHeader = { alg: 'RS256', typ: 'JWT' }
-  const jwtPayload = {
-    iss: clientEmail,
-    sub: subjectEmail,
-    scope: [
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.modify',
-    ].join(' '),
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: nowSec,
-    exp: nowSec + 3600,
-  }
-
-  const signingInput = `${b64url(jwtHeader)}.${b64url(jwtPayload)}`
-
-  const normalised = privateKeyPem.trim().replace(/\\n/g, '\n')
-  const pemBody = normalised
-    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
-    .replace(/-----END PRIVATE KEY-----/g, '')
-    .replace(/\s+/g, '')
-
-  const keyBytes = Buffer.from(pemBody, 'base64')
-
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8',
-    keyBytes,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  )
-
-  const signatureBytes = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    cryptoKey,
-    new TextEncoder().encode(signingInput),
-  )
-
-  const sigB64 = Buffer.from(signatureBytes)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-
-  const jwt = `${signingInput}.${sigB64}`
-
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt,
-    }),
-  })
-
-  if (!tokenRes.ok) {
-    const errText = await tokenRes.text()
-    throw new Error(`Token exchange failed (${tokenRes.status}): ${errText}`)
-  }
-
-  const tokenData = (await tokenRes.json()) as { access_token: string; expires_in: number }
-  const token = tokenData.access_token
-
-  tokenCache.set(cacheKey, {
-    token,
-    expiresAt: Date.now() + (tokenData.expires_in ?? 3600) * 1_000,
-  })
-
-  return token
 }

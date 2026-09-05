@@ -4,6 +4,7 @@ import { getInboxes } from '@/app/actions/inboxes'
 import { getLeadsSummary } from '@/app/actions/leads'
 import { getActivitySummaryStats, getActivityFeed } from '@/app/actions/activity'
 import { formatDate } from '@/lib/utils'
+import { CATEGORY_BADGES } from '@/lib/constants/replyCategories'
 import {
   Megaphone,
   Inbox,
@@ -23,39 +24,6 @@ import {
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
-
-const CATEGORY_BADGES: Record<string, { label: string; bg: string; text: string; border: string }> = {
-  interested: {
-    label: '🎯 Interested',
-    bg: 'bg-emerald-500/10',
-    text: 'text-emerald-400',
-    border: 'border-emerald-500/20',
-  },
-  not_interested: {
-    label: '🛑 Not Interested',
-    bg: 'bg-rose-500/10',
-    text: 'text-rose-400',
-    border: 'border-rose-500/20',
-  },
-  wrong_person: {
-    label: '🔄 Wrong Person',
-    bg: 'bg-amber-500/10',
-    text: 'text-amber-400',
-    border: 'border-amber-500/20',
-  },
-  undefined: {
-    label: '❓ Undefined',
-    bg: 'bg-purple-500/10',
-    text: 'text-purple-400',
-    border: 'border-purple-500/20',
-  },
-  out_of_office: {
-    label: '🏖️ Out of Office',
-    bg: 'bg-blue-500/10',
-    text: 'text-blue-400',
-    border: 'border-blue-500/20',
-  },
-}
 
 export default async function DashboardPage() {
   const [campaignsRes, inboxesRes, leadsSummaryRes, activityStatsRes, recentActivityRes] =
@@ -200,7 +168,7 @@ export default async function DashboardPage() {
 
         {/* Reply Rate & Intelligence */}
         <Link
-          href="/activity"
+          href="/smartbox"
           className="group rounded-2xl bg-zinc-900/50 border border-zinc-800/80 hover:border-zinc-700/80 p-5 space-y-3 transition-all hover:bg-zinc-900/70"
         >
           <div className="flex items-center justify-between">
@@ -315,7 +283,7 @@ export default async function DashboardPage() {
               <p className="text-xs text-zinc-400 mt-0.5">Gemini classified responses</p>
             </div>
             <Link
-              href="/activity"
+              href="/smartbox"
               className="text-xs text-indigo-400 hover:text-indigo-300 font-medium"
             >
               Feed

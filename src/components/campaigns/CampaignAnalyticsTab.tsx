@@ -2,14 +2,18 @@
 
 import { MessageSquare, Sparkles, TrendingUp } from 'lucide-react'
 import type { ActivityEvent, ActivitySummaryStats } from '@/app/actions/activity'
-import { ActivityFeed } from '@/components/activity/ActivityFeed'
+import type { CampaignLeadItem } from '@/app/actions/campaigns'
+import type { CampaignStep } from '@/lib/types/database'
+import { CampaignActivityFeed } from '@/components/campaigns/CampaignActivityFeed'
 
 interface Props {
   stats: ActivitySummaryStats
   events: ActivityEvent[]
+  campaignLeads: CampaignLeadItem[]
+  steps: CampaignStep[]
 }
 
-export function CampaignAnalyticsTab({ stats, events }: Props) {
+export function CampaignAnalyticsTab({ stats, events, campaignLeads, steps }: Props) {
   const replyRate = stats.totalSends > 0 ? ((stats.totalReplies / stats.totalSends) * 100).toFixed(1) : '0.0'
   const positiveReplyRate = (stats.positiveReplyRate * 100).toFixed(1)
 
@@ -22,7 +26,7 @@ export function CampaignAnalyticsTab({ stats, events }: Props) {
           <p className="text-[11px] text-zinc-500">Lifetime totals for this campaign</p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span>Reply Rate</span>
               <MessageSquare className="w-4 h-4 text-indigo-400" />
@@ -33,7 +37,7 @@ export function CampaignAnalyticsTab({ stats, events }: Props) {
             <p className="text-[11px] text-zinc-500">{stats.totalReplies} replies of {stats.totalSends} sends</p>
           </div>
 
-          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span>Positive Replies</span>
               <Sparkles className="w-4 h-4 text-emerald-400" />
@@ -44,7 +48,7 @@ export function CampaignAnalyticsTab({ stats, events }: Props) {
             <p className="text-[11px] text-zinc-500">Replies classified as interested</p>
           </div>
 
-          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 p-4 space-y-2">
+          <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
             <div className="flex items-center justify-between text-xs text-zinc-400">
               <span>Positive Reply Rate</span>
               <TrendingUp className="w-4 h-4 text-emerald-400" />
@@ -63,7 +67,7 @@ export function CampaignAnalyticsTab({ stats, events }: Props) {
           <h3 className="text-sm font-semibold text-zinc-100">Live Activity</h3>
           <p className="text-[11px] text-zinc-500">Today&apos;s pace alongside the full send &amp; reply log</p>
         </div>
-        <ActivityFeed initialEvents={events} stats={stats} />
+        <CampaignActivityFeed initialEvents={events} stats={stats} campaignLeads={campaignLeads} steps={steps} />
       </div>
     </div>
   )

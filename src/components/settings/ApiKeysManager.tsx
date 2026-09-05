@@ -93,7 +93,7 @@ export function ApiKeysManager({ initialKeys }: Props) {
   }
 
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-6 space-y-5">
+    <div className="bg-zinc-900/60 border border-zinc-800/80  hover:border-indigo-700 rounded-xl p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
@@ -121,11 +121,10 @@ export function ApiKeysManager({ initialKeys }: Props) {
             </code>
             <button
               onClick={handleCopy}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all shrink-0 ${
-                copied
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-200 border border-zinc-600'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all shrink-0 ${copied
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-200 border border-zinc-600'
+                }`}
             >
               {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied' : 'Copy'}
@@ -143,11 +142,10 @@ export function ApiKeysManager({ initialKeys }: Props) {
       {/* Feedback */}
       {feedback && (
         <div
-          className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${
-            feedback.type === 'success'
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-              : 'bg-red-500/10 border-red-500/20 text-red-400'
-          }`}
+          className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${feedback.type === 'success'
+            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+            : 'bg-red-500/10 border-red-500/20 text-red-400'
+            }`}
         >
           {feedback.type === 'success' ? (
             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
@@ -187,11 +185,10 @@ export function ApiKeysManager({ initialKeys }: Props) {
         {keys.map((key) => (
           <div
             key={key.id}
-            className={`flex items-center gap-3 px-4 py-3 rounded-lg border transition-all ${
-              key.is_active
-                ? 'bg-zinc-800/40 border-zinc-700/60'
-                : 'bg-zinc-900/40 border-zinc-800/40 opacity-60'
-            }`}
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg border hover:border-emerald-700 transition-all ${key.is_active
+              ? 'bg-zinc-800/40 border-zinc-700/60'
+              : 'bg-zinc-900/40 border-zinc-800/40 opacity-60'
+              }`}
           >
             {/* Status dot */}
             <div className={`w-2 h-2 rounded-full shrink-0 ${key.is_active ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
@@ -215,11 +212,10 @@ export function ApiKeysManager({ initialKeys }: Props) {
                 onClick={() => handleToggle(key.id, key.is_active)}
                 disabled={isPending}
                 title={key.is_active ? 'Deactivate key' : 'Activate key'}
-                className={`p-1.5 rounded-md transition-colors ${
-                  key.is_active
-                    ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-400/10'
-                    : 'text-zinc-500 hover:text-emerald-400 hover:bg-emerald-400/10'
-                }`}
+                className={`p-1.5 rounded-md transition-colors ${key.is_active
+                  ? 'text-zinc-400 hover:text-amber-400 hover:bg-amber-400/10'
+                  : 'text-zinc-500 hover:text-emerald-400 hover:bg-emerald-400/10'
+                  }`}
               >
                 {key.is_active ? <X className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>

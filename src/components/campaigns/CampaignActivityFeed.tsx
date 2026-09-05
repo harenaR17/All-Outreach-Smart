@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from 'react'
 import { ActivityEvent, ActivitySummaryStats } from '@/app/actions/activity'
+import type { CampaignLeadItem } from '@/app/actions/campaigns'
+import type { CampaignStep } from '@/lib/types/database'
 import { formatDate } from '@/lib/utils'
 import { Pagination } from '@/components/shared/Pagination'
-import { CATEGORY_BADGES } from '@/lib/constants/replyCategories'
 import {
   Send,
   MessageSquare,
@@ -12,29 +13,75 @@ import {
   AlertCircle,
   Clock,
   Search,
-  Filter,
-  CheckCircle2,
   Inbox,
   Megaphone,
-  Sparkles,
-  ArrowUpRight,
-  TrendingUp,
   XCircle,
+  Layers,
 } from 'lucide-react'
 
 interface Props {
   initialEvents: ActivityEvent[]
   stats: ActivitySummaryStats
+  campaignLeads: CampaignLeadItem[]
+  steps: CampaignStep[]
+}
+
+const CATEGORY_BADGES: Record<string, { label: string; bg: string; text: string; border: string }> = {
+  interested: {
+    label: '🎯 Interested',
+    bg: 'bg-emerald-500/10',
+    text: 'text-emerald-400',
+    border: 'border-emerald-500/20',
+  },
+  not_interested: {
+    label: '🛑 Not Interested',
+    bg: 'bg-rose-500/10',
+    text: 'text-rose-400',
+    border: 'border-rose-500/20',
+  },
+  wrong_person: {
+    label: '🔄 Wrong Person',
+    bg: 'bg-amber-500/10',
+    text: 'text-amber-400',
+    border: 'border-amber-500/20',
+  },
+  undefined: {
+    label: '❓ Undefined',
+    bg: 'bg-purple-500/10',
+    text: 'text-purple-400',
+    border: 'border-purple-500/20',
+  },
+  out_of_office: {
+    label: '🏖️ Out of Office',
+    bg: 'bg-blue-500/10',
+    text: 'text-blue-400',
+    border: 'border-blue-500/20',
+  },
 }
 
 const PAGE_SIZE = 15
 
-export function ActivityFeed({ initialEvents, stats }: Props) {
+export function CampaignActivityFeed({ initialEvents, stats, campaignLeads, steps }: Props) {
   const [events] = useState<ActivityEvent[]>(initialEvents)
   const [activeTab, setActiveTab] = useState<'all' | 'sends' | 'replies' | 'failed'>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [paginationFilterKey, setPaginationFilterKey] = useState(`${activeTab}__${search}`)
+
+  // Active-lead counts per sequence step, keyed by 0-based current_step.
+  const stepActiveCounts = useMemo(() => {
+    const counts: Record<number, number> = {}
+    for (const lead of campaignLeads) {
+      if (lead.status !== 'active') continue
+      counts[lead.current_step] = (counts[lead.current_step] || 0) + 1
+    }
+    return counts
+  }, [campaignLeads])
+
+  const orderedSteps = useMemo(
+    () => [...steps].sort((a, b) => a.step_order - b.step_order),
+    [steps]
+  )
 
   const filteredEvents = useMemo(() => {
     return events.filter((ev) => {
@@ -86,7 +133,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
       {/* Deliverability & Activity KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Sends Today */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Sends Today</span>
             <Send className="w-4 h-4 text-indigo-400" />
@@ -95,11 +142,11 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
             <span className="text-2xl font-bold text-zinc-100">{stats.sendsToday}</span>
             <span className="text-xs text-zinc-500 font-mono">({stats.totalSends} total)</span>
           </div>
-          <p className="text-[11px] text-zinc-500">Live emails dispatched via campaign sequences</p>
+          <p className="text-[11px] text-zinc-500">Live emails dispatched via this campaign&apos;s sequence</p>
         </div>
 
         {/* Replies Received */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Replies Received</span>
             <MessageSquare className="w-4 h-4 text-emerald-400" />
@@ -116,7 +163,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
         </div>
 
         {/* Bounces */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Bounces</span>
             <AlertCircle className="w-4 h-4 text-amber-400" />
@@ -129,7 +176,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
         </div>
 
         {/* Failed Sends */}
-        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-2">
+        <div className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Failed Sends / Issues</span>
             <AlertTriangle className="w-4 h-4 text-rose-400" />
@@ -144,8 +191,47 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
         </div>
       </div>
 
+      {/* Step Analytics */}
+      <div className="space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+            <Layers className="w-4 h-4 text-indigo-400" />
+            Step Analytics
+          </h3>
+          <p className="text-[11px] text-zinc-500">Active leads currently sitting at each step of the sequence</p>
+        </div>
+        {orderedSteps.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {orderedSteps.map((step, idx) => {
+              const activeCount = stepActiveCounts[idx] || 0
+              return (
+                <div key={step.id} className="rounded-xl bg-zinc-900/50 border border-zinc-800/80  hover:border-indigo-700 p-4 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-zinc-400">
+                    <span>Step {step.step_order} of {orderedSteps.length}</span>
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                      <Layers className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-zinc-100">{activeCount}</span>
+                    <span className="text-xs text-zinc-500">active {activeCount === 1 ? 'lead' : 'leads'}</span>
+                  </div>
+                  <p className="text-[11px] text-zinc-500 truncate" title={step.subject_template || undefined}>
+                    {step.subject_template || 'No subject set'}
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="p-6 rounded-xl bg-zinc-900/50 border border-zinc-800/80 text-center">
+            <p className="text-xs text-zinc-400">No sequence steps configured yet.</p>
+          </div>
+        )}
+      </div>
+
       {/* Tabs & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800 hover:border-indigo-700">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
         <div className="relative flex-1 max-w-sm">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
           <input
@@ -210,7 +296,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
                 return (
                   <div
                     key={ev.id}
-                    className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-600/30 transition-colors"
+                    className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-900/30 transition-colors"
                   >
                     {/* Left: Type Icon + Lead Details */}
                     <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -329,7 +415,7 @@ export function ActivityFeed({ initialEvents, stats }: Props) {
             <Clock className="w-8 h-8 text-zinc-600 mx-auto" />
             <p className="text-xs font-medium text-zinc-300">No activity recorded</p>
             <p className="text-[11px] text-zinc-500">
-              {search ? 'Try clearing your search query.' : 'Dispatched outreach emails and replies will appear here in real time.'}
+              {search ? 'Try clearing your search query.' : 'Dispatched outreach emails and replies for this campaign will appear here.'}
             </p>
           </div>
         )}
