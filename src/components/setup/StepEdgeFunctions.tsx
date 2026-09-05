@@ -10,6 +10,7 @@ import {
   deployEdgeFunctions,
   configureEdgeFunctionsAuth,
   switchCronToEdgeFunctions,
+  type EdgeFunctionVerification,
 } from '@/app/actions/setup'
 import {
   Check,
@@ -41,13 +42,12 @@ interface StepEdgeFunctionsProps {
 }
 
 // Known Edge Function slugs. Mirrors the backend's `EDGE_FUNCTION_CRON_SCHEDULES` map in
-// `src/app/actions/setup.ts` — a slug only shows a live verification badge if
-// `verifyEdgeFunctions` actually checks it (currently `sender` / `reply-checker`); slugs without
-// a `verifyKey` (e.g. `thread-sync`) still render a tile, but fall back to a "Deployed"/"Built-in"
-// label instead of "Ready"/"Unreachable" since the backend doesn't ping them yet.
-const WORKER_TILES: Array<{ slug: string; label: string; verifyKey?: 'sender' | 'replyChecker' }> = [
-  { slug: 'sender', label: 'Email Sender', verifyKey: 'sender' },
-  { slug: 'reply-checker', label: 'Reply Checker', verifyKey: 'replyChecker' },
+// `src/app/actions/setup.ts`. `verifyEdgeFunctions` now returns a keyed record covering every
+// slug it enumerates on disk (including `thread-sync`), so every tile below gets a live
+// "Ready"/"Unreachable" badge once "Test Workers Live" runs — looked up directly by `slug`.
+const WORKER_TILES: Array<{ slug: string; label: string }> = [
+  { slug: 'sender', label: 'Email Sender' },
+  { slug: 'reply-checker', label: 'Reply Checker' },
   { slug: 'thread-sync', label: 'Thread Sync' },
 ]
 
@@ -71,10 +71,7 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
 
   // ─── Step C: Verify ────────────────────────────────────────────────────────
   const [verifying, setVerifying] = useState(false)
-  const [verificationResult, setVerificationResult] = useState<{
-    sender: { reachable: boolean; status?: number; error?: string }
-    replyChecker: { reachable: boolean; status?: number; error?: string }
-  } | null>(null)
+  const [verificationResult, setVerificationResult] = useState<Record<string, EdgeFunctionVerification> | null>(null)
 
   // ─── Database cron_config.settings State ─────────────────────────────────────
   const [dbSettings, setDbSettings] = useState<Record<string, string> | null>(null)
@@ -260,10 +257,11 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
       })
       setVerificationResult(res)
     } catch {
-      setVerificationResult({
-        sender: { reachable: false, error: 'Connection error' },
-        replyChecker: { reachable: false, error: 'Connection error' },
-      })
+      setVerificationResult(
+        Object.fromEntries(
+          WORKER_TILES.map((worker) => [worker.slug, { reachable: false, error: 'Connection error' }])
+        )
+      )
     } finally {
       setVerifying(false)
     }
@@ -469,7 +467,7 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1 text-xs">
             {WORKER_TILES.map((worker) => {
-              const result = worker.verifyKey ? verificationResult?.[worker.verifyKey] : undefined
+              const result = verificationResult?.[worker.slug]
               const isChecked = Boolean(result)
               const isReady = Boolean(result?.reachable)
               const targetPath = cronTarget === 'edge_functions' ? `/functions/v1/${worker.slug}` : `/api/cron/${worker.slug}`
