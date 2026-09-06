@@ -53,10 +53,7 @@ export default async function CampaignStudioPage({ params }: Props) {
           <span>Back to Campaigns</span>
         </Link>
 
-        <div className="flex items-center gap-2 text-[11px] text-zinc-500 font-mono">
-          <span>Campaign ID:</span>
-          <span className="text-zinc-400">{campaign.id}...</span>
-        </div>
+
       </div>
 
       {/* Main Studio Editor */}

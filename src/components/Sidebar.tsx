@@ -103,9 +103,9 @@ export function Sidebar() {
 
         {/* Navigation Items */}
         <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
-          <div className="px-3 py-2 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
+          {/* <div className="px-3 py-2 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
             Main Navigation
-          </div>
+          </div> */}
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href

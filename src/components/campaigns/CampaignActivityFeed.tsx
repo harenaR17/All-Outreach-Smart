@@ -216,9 +216,6 @@ export function CampaignActivityFeed({ initialEvents, stats, campaignLeads, step
                     <span className="text-2xl font-bold text-zinc-100">{activeCount}</span>
                     <span className="text-xs text-zinc-500">active {activeCount === 1 ? 'lead' : 'leads'}</span>
                   </div>
-                  <p className="text-[11px] text-zinc-500 truncate" title={step.subject_template || undefined}>
-                    {step.subject_template || 'No subject set'}
-                  </p>
                 </div>
               )
             })}
