@@ -69,7 +69,7 @@ correct as functions are added or removed without further code changes here:
   const EDGE_FUNCTION_CRON_SCHEDULES: Record<string, string> = {
     sender: '* * * * *',
     'reply-checker': '*/3 * * * *',
-    'thread-sync': '0 3 * * *',
+    'thread-sync': '0 * * * *',
   }
   ```
 

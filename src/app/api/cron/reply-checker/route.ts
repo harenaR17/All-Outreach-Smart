@@ -168,7 +168,7 @@ async function handleReplyChecker(req: NextRequest) {
         // Tracks whether any new non-bounce reply was logged for this lead in
         // this run, so we can immediately sync the full thread into
         // thread_messages once at the end instead of waiting for the next
-        // daily thread-sync run (SmartBox unified-inbox UI).
+        // hourly thread-sync run (SmartBox unified-inbox UI).
         let hasNewNonBounceReply = false
 
         // 6. Inspect messages after the first outbound email
@@ -378,7 +378,7 @@ async function handleReplyChecker(req: NextRequest) {
         // 7. Immediate SmartBox thread sync: if this run logged a new
         // non-bounce reply for this lead, persist the full thread (already
         // fetched above) into thread_messages right now instead of waiting
-        // for the next daily thread-sync run.
+        // for the next hourly thread-sync run.
         if (hasNewNonBounceReply) {
           const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address)
           if (syncResult.error) {

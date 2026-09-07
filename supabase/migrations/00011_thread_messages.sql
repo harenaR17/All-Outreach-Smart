@@ -9,10 +9,10 @@
 -- on every page view.
 --
 -- Populated by:
---   - supabase/functions/thread-sync (daily batch, diffs against
+--   - supabase/functions/thread-sync (hourly batch, diffs against
 --     gmail_message_id and inserts only new messages)
 --   - reply-checker, inline, immediately after it detects and logs a new
---     non-bounce reply (so SmartBox isn't stale for up to a day)
+--     non-bounce reply (so SmartBox isn't stale for up to an hour)
 -- ============================================================================
 
 create table if not exists thread_messages (
@@ -29,7 +29,7 @@ create table if not exists thread_messages (
 );
 
 comment on table thread_messages is
-  'Full Gmail thread cache (per-message subject/body/from/to) for the SmartBox unified-inbox UI. Gmail remains the source of truth; this table is a synced copy populated by thread-sync (daily) and inline by reply-checker on new non-bounce replies.';
+  'Full Gmail thread cache (per-message subject/body/from/to) for the SmartBox unified-inbox UI. Gmail remains the source of truth; this table is a synced copy populated by thread-sync (hourly) and inline by reply-checker on new non-bounce replies.';
 comment on column thread_messages.gmail_message_id is
   'Gmail message id. Globally unique — used to diff against already-synced messages for a thread so re-syncs only insert the messages that are actually new.';
 comment on column thread_messages.direction is

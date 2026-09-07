@@ -32,7 +32,7 @@ import path from 'node:path'
 const EDGE_FUNCTION_CRON_SCHEDULES: Record<string, string> = {
   sender: '* * * * *',
   'reply-checker': '*/3 * * * *',
-  'thread-sync': '0 3 * * *',
+  'thread-sync': '0 * * * *',
 }
 
 /** Enumerates deployable Edge Function slugs under `supabase/functions/`. */
@@ -386,7 +386,7 @@ export async function runDatabaseMigrations(input: {
       await sqlClient.end()
       return { success: true, completedSteps }
     } catch (connErr: unknown) {
-      if (sqlClient) await sqlClient.end().catch(() => {})
+      if (sqlClient) await sqlClient.end().catch(() => { })
       return {
         success: false,
         completedSteps,
@@ -960,7 +960,7 @@ export async function switchCronToEdgeFunctions(input: {
       await sqlClient.end()
       return { success: true, scheduled: toSchedule }
     } catch (err: unknown) {
-      if (sqlClient) await sqlClient.end().catch(() => {})
+      if (sqlClient) await sqlClient.end().catch(() => { })
       return {
         success: false,
         scheduled: [],

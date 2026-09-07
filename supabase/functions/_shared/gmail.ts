@@ -89,7 +89,7 @@ export function isSentByInbox(msg: GmailMessage, inboxEmailAddress: string): boo
   const fromHeader = getHeader(msg.payload?.headers || [], 'from') || ''
   return Boolean(
     (msg.labelIds && msg.labelIds.includes('SENT')) ||
-      (inboxEmailAddress && fromHeader.toLowerCase().includes(inboxEmailAddress.toLowerCase()))
+    (inboxEmailAddress && fromHeader.toLowerCase().includes(inboxEmailAddress.toLowerCase()))
   )
 }
 
@@ -153,7 +153,7 @@ export function toThreadMessageRecord(
  * Diffs a fetched Gmail thread against already-synced `thread_messages` rows
  * for one campaign_lead and inserts only the messages that are new.
  *
- * Used both by `thread-sync`'s daily batch (one thread fetched per lead) and
+ * Used both by `thread-sync`'s hourly batch (one thread fetched per lead) and
  * by `reply-checker`'s immediate inline sync (reusing the thread it just
  * fetched for classification, no extra Gmail call needed).
  */
