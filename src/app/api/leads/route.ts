@@ -97,8 +97,8 @@ export async function POST(req: NextRequest) {
         .insert({
           campaign_id,
           lead_id: typedLead.id,
-          status: 'active',
-          next_send_at: new Date().toISOString(),
+          status: 'pending',
+          current_step: 0,
         })
         .select()
         .maybeSingle()
@@ -118,8 +118,8 @@ export async function POST(req: NextRequest) {
           {
             campaign_id,
             lead_id: typedLead.id,
-            status: 'active',
-            next_send_at: new Date().toISOString(),
+            status: 'pending',
+            current_step: 0,
           },
           { onConflict: 'campaign_id,lead_id' }
         )
