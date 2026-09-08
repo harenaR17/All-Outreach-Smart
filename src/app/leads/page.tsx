@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function LeadsPage() {
   const [leadsRes, importsRes, campaignsRes] = await Promise.all([
-    getLeads({ limit: 200 }),
+    getLeads(),
     getLeadImports(),
     getCampaigns(),
   ])

@@ -174,7 +174,7 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
 
 export interface GetLeadsParams {
   page?: number
-  limit?: number
+  limit?: number | null
   status?: 'active' | 'do_not_contact' | 'bounced' | 'all'
   search?: string
 }
@@ -187,9 +187,10 @@ export async function getLeads(params: GetLeadsParams = {}): Promise<{
 }> {
   try {
     const supabase = supabaseAdmin()
+    const hasLimit = params.limit !== undefined && params.limit !== null
     const page = Math.max(1, params.page || 1)
-    const limit = Math.min(100, Math.max(1, params.limit || 50))
-    const offset = (page - 1) * limit
+    const limit = hasLimit ? Math.max(1, params.limit!) : undefined
+    const offset = limit ? (page - 1) * limit : 0
 
     let query = supabase.from('leads').select('*', { count: 'exact' })
 
@@ -202,7 +203,11 @@ export async function getLeads(params: GetLeadsParams = {}): Promise<{
       query = query.ilike('email', `%${search}%`)
     }
 
-    query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1)
+    query = query.order('created_at', { ascending: false })
+
+    if (limit !== undefined) {
+      query = query.range(offset, offset + limit - 1)
+    }
 
     const { data, count, error } = await query
 
