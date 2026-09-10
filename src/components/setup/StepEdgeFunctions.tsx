@@ -27,7 +27,6 @@ import {
   RefreshCw,
   Zap,
 } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 
 interface StepEdgeFunctionsProps {
   formData: {
@@ -52,7 +51,6 @@ const WORKER_TILES: Array<{ slug: string; label: string }> = [
 ]
 
 export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) {
-  const router = useRouter()
   const [managementToken, setManagementToken] = useState(formData.managementToken || '')
 
   // ─── Step A: Deploy & Inject Secrets & Configure Auth ─────────────────────
@@ -281,8 +279,11 @@ export function StepEdgeFunctions({ formData, onBack }: StepEdgeFunctionsProps) 
       })
 
       if (res.success) {
-        // Redirect to Login
-        router.push('/login?setup=complete')
+        // Full page navigation (not router.push) so AppShell re-fetches setup
+        // status fresh instead of bouncing back to /setup on its stale cached
+        // "incomplete" state.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.href = '/login?setup=complete'
       } else {
         setFinishError(res.error || 'Failed to persist setup configuration.')
         setFinishing(false)
