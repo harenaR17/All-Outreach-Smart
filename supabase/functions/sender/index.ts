@@ -192,7 +192,8 @@ Deno.serve(async (req: Request) => {
         .or(`next_available_at.is.null,next_available_at.lte.${nowInbox}`)
 
       const hasEligibleInbox = (inboxCheck ?? []).some(
-        (i) => (i.daily_send_count ?? 0) < i.daily_send_limit
+        (i: { daily_send_count?: number | null; daily_send_limit: number }) =>
+          (i.daily_send_count ?? 0) < i.daily_send_limit,
       )
       if (!hasEligibleInbox) {
         return jsonResponse({ status: 'ok', message: 'No eligible inboxes', ...results })
