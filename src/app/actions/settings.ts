@@ -93,16 +93,7 @@ export async function deleteGeminiKey(id: string): Promise<{ success: boolean; e
   }
 }
 
-// Same fallback order as the reply-checker Edge Function in supabase/functions/_shared/gemini.ts
-const GEMINI_MODEL_FALLBACK_ORDER = [
-  'gemini-2.5-flash-lite',
-  'gemini-3.1-flash-lite',
-  'gemini-3.5-flash-lite',
-  'gemini-2.5-flash',
-  'gemini-3.5-flash',
-  'gemini-3.6-flash',
-  'gemini-3.7-flash',
-]
+import { getAvailableFlashModels, DEFAULT_FALLBACK_MODELS } from '@/lib/llm/gemini'
 
 export async function testGeminiKey(apiKey: string): Promise<{
   success: boolean
@@ -113,8 +104,9 @@ export async function testGeminiKey(apiKey: string): Promise<{
   if (!key) return { success: false, error: 'API key is required' }
 
   const lastError: string[] = []
+  const models = await getAvailableFlashModels([{ id: 'test-probe', api_key: key }])
 
-  for (const model of GEMINI_MODEL_FALLBACK_ORDER) {
+  for (const model of models) {
     try {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,

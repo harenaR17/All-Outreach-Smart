@@ -137,6 +137,8 @@ CREATE TABLE IF NOT EXISTS campaign_leads (
   last_message_id text,
   next_send_at timestamptz,
   replied_at timestamptz,
+  last_reply_checked_at timestamptz,
+  last_thread_synced_at timestamptz,
   UNIQUE (campaign_id, lead_id)
 );`,
     },
@@ -395,6 +397,32 @@ ALTER TABLE email_accounts
 ALTER TABLE campaigns
   ADD COLUMN IF NOT EXISTS send_priority text NOT NULL DEFAULT 'new_leads'
     CHECK (send_priority IN ('new_leads', 'follow_ups'));`,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 14: last_reply_checked_at queue tracking (00012_last_reply_checked_at.sql)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add last_reply_checked_at column and index to campaign_leads',
+      sql: `
+ALTER TABLE campaign_leads
+  ADD COLUMN IF NOT EXISTS last_reply_checked_at timestamptz DEFAULT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_campaign_leads_reply_check
+  ON campaign_leads (last_reply_checked_at NULLS FIRST);`,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 15: last_thread_synced_at queue tracking (00013_last_thread_synced_at.sql)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add last_thread_synced_at column and index to campaign_leads',
+      sql: `
+ALTER TABLE campaign_leads
+  ADD COLUMN IF NOT EXISTS last_thread_synced_at timestamptz DEFAULT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_campaign_leads_thread_sync
+  ON campaign_leads (last_thread_synced_at NULLS FIRST);`,
     },
   ]
 }

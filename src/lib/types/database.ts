@@ -76,6 +76,8 @@ export type Database = {
           lead_id: string
           next_send_at: string | null
           replied_at: string | null
+          last_reply_checked_at: string | null
+          last_thread_synced_at: string | null
           status: "pending" | "active" | "replied" | "bounced" | "paused" | "completed"
           thread_id: string | null
         }
@@ -88,6 +90,8 @@ export type Database = {
           lead_id: string
           next_send_at?: string | null
           replied_at?: string | null
+          last_reply_checked_at?: string | null
+          last_thread_synced_at?: string | null
           status?: "pending" | "active" | "replied" | "bounced" | "paused" | "completed"
           thread_id?: string | null
         }
@@ -100,6 +104,8 @@ export type Database = {
           lead_id?: string
           next_send_at?: string | null
           replied_at?: string | null
+          last_reply_checked_at?: string | null
+          last_thread_synced_at?: string | null
           status?: "pending" | "active" | "replied" | "bounced" | "paused" | "completed"
           thread_id?: string | null
         }

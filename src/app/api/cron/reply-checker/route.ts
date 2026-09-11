@@ -8,6 +8,7 @@ import {
   extractPlainTextBody,
   fetchGmailThread,
   syncThreadMessages,
+  type GmailMessage,
 } from '@/lib/google/gmail-thread'
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -20,6 +21,7 @@ interface CampaignLeadRow {
   thread_id: string
   status: string
   current_step: number
+  last_reply_checked_at?: string | null
   campaigns: {
     id: string
     name: string
@@ -37,6 +39,33 @@ interface CampaignLeadRow {
     service_account_client_email: string
     service_account_private_key: string
   }
+}
+
+// ─── Queue Batching & Concurrency ────────────────────────────────────────────
+
+const BATCH_SIZE = 150
+const CONCURRENCY = 5
+
+// ─── Thread Transcript Helper ────────────────────────────────────────────────
+
+function formatThreadTranscript(
+  messages: GmailMessage[],
+  currentIdx: number,
+  inboxEmail: string,
+): string {
+  const parts: string[] = []
+  for (let idx = 0; idx < currentIdx; idx++) {
+    const m = messages[idx]
+    const headers = m.payload?.headers || []
+    const from = getHeader(headers, 'from') || ''
+    const isSentByUs = (m.labelIds && m.labelIds.includes('SENT')) || from.includes(inboxEmail)
+    const role = isSentByUs ? 'Outreach Team' : 'Lead'
+    const body = extractPlainTextBody(m.payload) || m.snippet || ''
+    if (body.trim()) {
+      parts.push(`[${role}]:\n${body.trim()}`)
+    }
+  }
+  return parts.join('\n\n')
 }
 
 // ─── Verification Helper ─────────────────────────────────────────────────────
@@ -121,55 +150,111 @@ async function handleReplyChecker(req: NextRequest) {
       campaignRecipientsMap.get(row.campaign_id)!.add(row.recipient_id)
     }
 
-    // 3. Fetch all active campaign_leads with an open thread_id
-    const { data: openThreads, error: threadsErr } = await supabase
-      .from('campaign_leads')
-      .select('*, campaigns!inner(*), leads!inner(*), email_accounts!inner(*)')
-      .eq('status', 'active')
-      .not('thread_id', 'is', null)
+    // 3. Fetch candidate campaign_leads with an open thread_id, ordered by
+    // least-recently-checked (nulls first) to implement round-robin fair queueing.
+    const [threadsRes, repliesRes] = await Promise.all([
+      supabase
+        .from('campaign_leads')
+        .select('*, campaigns!inner(*), leads!inner(*), email_accounts!inner(*)')
+        .in('status', ['active', 'completed', 'replied'])
+        .not('thread_id', 'is', null)
+        .order('last_reply_checked_at', { ascending: true, nullsFirst: true }),
+      supabase
+        .from('replies')
+        .select('campaign_lead_id, gmail_message_id, classification, llm_category'),
+    ])
 
-    if (threadsErr) throw threadsErr
-    if (!openThreads || openThreads.length === 0) {
-      return NextResponse.json({ status: 'ok', message: 'No active threads to check', ...results })
+    if (threadsRes.error) throw threadsRes.error
+    const candidateThreads = threadsRes.data || []
+
+    const existingReplies = repliesRes.data || []
+    const existingMsgIds = new Set(
+      (existingReplies as Array<{ gmail_message_id: string | null }>)
+        .map((r) => r.gmail_message_id)
+        .filter(Boolean),
+    )
+
+    // Index replies by campaign_lead_id to evaluate reply/bounce history
+    const repliesByLeadId = new Map<string, Array<{ classification: string; llm_category: string | null }>>()
+    for (const r of existingReplies as Array<{ campaign_lead_id: string | null; classification: string; llm_category: string | null }>) {
+      if (!r.campaign_lead_id) continue
+      const list = repliesByLeadId.get(r.campaign_lead_id) || []
+      list.push(r)
+      repliesByLeadId.set(r.campaign_lead_id, list)
+    }
+
+    // Filter threads to check based on criteria:
+    // - Check active leads in sequence
+    // - Check leads marked completed that have not received any real reply
+    // - Check leads marked out of office (auto/out_of_office reply, awaiting potential real reply)
+    // - Skip any leads that bounced (status/lead status bounced or has bounce reply)
+    // - Skip leads that already received a real reply
+    const eligibleThreads = (candidateThreads as unknown as CampaignLeadRow[]).filter((cl) => {
+      if (!cl.email_accounts) return false
+
+      const leadReplies = repliesByLeadId.get(cl.id) || []
+      const hasRealReply = leadReplies.some((r) => r.classification === 'real')
+      const hasBounce =
+        cl.status === 'bounced' ||
+        cl.leads?.status === 'bounced' ||
+        leadReplies.some((r) => r.classification === 'bounce')
+
+      if (hasBounce) return false
+      if (hasRealReply) return false
+
+      // 1. Active sequence leads
+      if (cl.status === 'active') return true
+
+      // 2. Completed leads that haven't received a real reply
+      if (cl.status === 'completed') return true
+
+      // 3. Leads marked out-of-office (auto-reply received, checking if real reply arrives later)
+      const isOutOfOffice = leadReplies.some(
+        (r) => r.llm_category === 'out_of_office' || r.classification === 'auto',
+      )
+      if (cl.status === 'replied' && isOutOfOffice) return true
+
+      return false
+    })
+
+    // Take top BATCH_SIZE (150) from the round-robin queue
+    const openThreads = eligibleThreads.slice(0, BATCH_SIZE)
+
+    if (openThreads.length === 0) {
+      return NextResponse.json({ status: 'ok', message: 'No candidate threads to check', ...results })
     }
 
     results.threadsChecked = openThreads.length
 
-    // Fetch existing recorded message IDs from replies table
-    const { data: existingReplies } = await supabase.from('replies').select('gmail_message_id')
-    const existingMsgIds = new Set(
-      (existingReplies || []).map((r: { gmail_message_id: string | null }) => r.gmail_message_id).filter(Boolean),
-    )
+    // 4. Process threads with micro-concurrency (5 at a time) for speed
+    for (let chunkStart = 0; chunkStart < openThreads.length; chunkStart += CONCURRENCY) {
+      const chunk = openThreads.slice(chunkStart, chunkStart + CONCURRENCY)
+      await Promise.all(
+        chunk.map(async (cl) => {
+          try {
+            const inbox = cl.email_accounts
+            const lead = cl.leads
+            const campaign = cl.campaigns
+            const stopOnAutoReply = campaign.stop_on_auto_reply ?? true
 
-    for (const cl of openThreads as unknown as CampaignLeadRow[]) {
-      try {
-        const inbox = cl.email_accounts
-        const lead = cl.leads
-        const campaign = cl.campaigns
-        const stopOnAutoReply = campaign.stop_on_auto_reply ?? true
+            // Get Gmail access token
+            const token = await getCachedGmailAccessToken(
+              inbox.service_account_client_email,
+              inbox.service_account_private_key,
+              inbox.email_address,
+            )
 
-        // 4. Get Gmail access token
-        const token = await getCachedGmailAccessToken(
-          inbox.service_account_client_email,
-          inbox.service_account_private_key,
-          inbox.email_address,
-        )
+            // Fetch the Gmail thread
+            const threadRes = await fetchGmailThread(cl.thread_id, token)
+            if (!threadRes.ok) {
+              results.errors.push(threadRes.error)
+              return
+            }
 
-        // 5. Fetch the Gmail thread
-        const threadRes = await fetchGmailThread(cl.thread_id, token)
-        if (!threadRes.ok) {
-          results.errors.push(threadRes.error)
-          continue
-        }
+            const messages = threadRes.messages
+            if (messages.length <= 1) return
 
-        const messages = threadRes.messages
-        if (messages.length <= 1) continue
-
-        // Tracks whether any new non-bounce reply was logged for this lead in
-        // this run, so we can immediately sync the full thread into
-        // thread_messages once at the end instead of waiting for the next
-        // hourly thread-sync run (SmartBox unified-inbox UI).
-        let hasNewNonBounceReply = false
+            let hasNewNonBounceReply = false
 
         // 6. Inspect messages after the first outbound email
         for (let i = 1; i < messages.length; i++) {
@@ -276,6 +361,21 @@ async function handleReplyChecker(req: NextRequest) {
           if (geminiKeys.length > 0) {
             const llmRes = await classifyReplyWithGemini(fullBody, { leadCompany: company }, geminiKeys)
             llmCategory = llmRes.category
+
+            // Ambiguity retry: if single reply returns 'undefined' and earlier messages exist in thread
+            if (llmCategory === 'undefined' && i > 0) {
+              const threadTranscript = formatThreadTranscript(messages, i, inbox.email_address)
+              if (threadTranscript.trim()) {
+                const retryRes = await classifyReplyWithGemini(
+                  fullBody,
+                  { leadCompany: company, threadHistory: threadTranscript },
+                  geminiKeys,
+                )
+                if (retryRes.category && retryRes.category !== 'undefined') {
+                  llmCategory = retryRes.category
+                }
+              }
+            }
           }
 
           if (llmCategory === 'out_of_office') {
@@ -375,19 +475,32 @@ async function handleReplyChecker(req: NextRequest) {
           }
         }
 
-        // 7. Immediate SmartBox thread sync: if this run logged a new
-        // non-bounce reply for this lead, persist the full thread (already
-        // fetched above) into thread_messages right now instead of waiting
-        // for the next hourly thread-sync run.
-        if (hasNewNonBounceReply) {
-          const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address)
-          if (syncResult.error) {
-            results.errors.push(`thread_messages sync failed for lead ${cl.lead_id}: ${syncResult.error}`)
+            // 7. Immediate SmartBox thread sync
+            if (hasNewNonBounceReply) {
+              const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address)
+              if (syncResult.error) {
+                results.errors.push(`thread_messages sync failed for lead ${cl.lead_id}: ${syncResult.error}`)
+              } else {
+                await supabase
+                  .from('campaign_leads')
+                  .update({ last_thread_synced_at: new Date().toISOString() })
+                  .eq('id', cl.id)
+              }
+            }
+          } catch (leadErr) {
+            results.errors.push(`Error processing thread for lead ${cl.leads?.email}: ${String(leadErr)}`)
           }
-        }
-      } catch (leadErr) {
-        results.errors.push(`Error processing thread for lead ${cl.leads?.email}: ${String(leadErr)}`)
-      }
+        })
+      )
+    }
+
+    // 8. Update last_reply_checked_at for all polled leads so the next tick rotates to the next batch
+    const checkedLeadIds = openThreads.map((cl) => cl.id)
+    if (checkedLeadIds.length > 0) {
+      await supabase
+        .from('campaign_leads')
+        .update({ last_reply_checked_at: new Date().toISOString() })
+        .in('id', checkedLeadIds)
     }
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
