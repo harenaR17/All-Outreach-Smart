@@ -69,6 +69,10 @@ CREATE TABLE IF NOT EXISTS campaigns (
   working_hours_start time NOT NULL DEFAULT '09:00',
   working_hours_end time NOT NULL DEFAULT '17:00',
   stop_on_auto_reply boolean NOT NULL DEFAULT true,
+  send_priority text NOT NULL DEFAULT 'new_leads'
+    CHECK (send_priority IN ('new_leads', 'follow_ups')),
+  limit_emails_per_company integer DEFAULT 2
+    CHECK (limit_emails_per_company IS NULL OR limit_emails_per_company >= 0),
   created_at timestamptz NOT NULL DEFAULT now()
 );`,
     },
@@ -170,6 +174,25 @@ CREATE TABLE IF NOT EXISTS replies (
   notified_at timestamptz,
   snippet text
 );`,
+    },
+    {
+      label: 'Create thread_messages table',
+      sql: `
+CREATE TABLE IF NOT EXISTS thread_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_lead_id uuid NOT NULL REFERENCES campaign_leads(id) ON DELETE CASCADE,
+  gmail_message_id text NOT NULL UNIQUE,
+  direction text NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+  from_address text,
+  to_address text,
+  subject text,
+  body_text text,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_thread_messages_campaign_lead
+  ON thread_messages (campaign_lead_id);`,
     },
     {
       label: 'Create telegram_notify_recipients table',
@@ -400,7 +423,44 @@ ALTER TABLE campaigns
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Step 14: last_reply_checked_at queue tracking (00012_last_reply_checked_at.sql)
+    // Step 14: Limit emails per company (00009 + 00010 migrations)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add limit_emails_per_company column to campaigns table',
+      sql: `
+ALTER TABLE campaigns
+  ADD COLUMN IF NOT EXISTS limit_emails_per_company integer DEFAULT 2
+    CHECK (limit_emails_per_company IS NULL OR limit_emails_per_company >= 0);
+
+ALTER TABLE campaigns
+  ALTER COLUMN limit_emails_per_company SET DEFAULT 2;`,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 15: Thread messages cache (00011_thread_messages.sql)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Create thread_messages table',
+      sql: `
+CREATE TABLE IF NOT EXISTS thread_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_lead_id uuid NOT NULL REFERENCES campaign_leads(id) ON DELETE CASCADE,
+  gmail_message_id text NOT NULL UNIQUE,
+  direction text NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+  from_address text,
+  to_address text,
+  subject text,
+  body_text text,
+  occurred_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_thread_messages_campaign_lead
+  ON thread_messages (campaign_lead_id);`,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 16: last_reply_checked_at queue tracking (00012_last_reply_checked_at.sql)
     // ─────────────────────────────────────────────────────────────────────────
     {
       label: 'Add last_reply_checked_at column and index to campaign_leads',
@@ -413,7 +473,7 @@ CREATE INDEX IF NOT EXISTS idx_campaign_leads_reply_check
     },
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Step 15: last_thread_synced_at queue tracking (00013_last_thread_synced_at.sql)
+    // Step 17: last_thread_synced_at queue tracking (00013_last_thread_synced_at.sql)
     // ─────────────────────────────────────────────────────────────────────────
     {
       label: 'Add last_thread_synced_at column and index to campaign_leads',
@@ -445,4 +505,5 @@ export const CORE_TABLES = [
   'api_keys',
   'gemini_api_keys',
   'campaign_telegram_recipients',
+  'thread_messages',
 ] as const
