@@ -213,6 +213,7 @@ export type Database = {
       email_accounts: {
         Row: {
           created_at: string
+          daily_send_count: number
           daily_send_limit: number
           display_name: string | null
           email_address: string
@@ -237,6 +238,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          daily_send_count?: number
           daily_send_limit?: number
           display_name?: string | null
           email_address: string
@@ -261,6 +263,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          daily_send_count?: number
           daily_send_limit?: number
           display_name?: string | null
           email_address?: string

@@ -484,6 +484,26 @@ ALTER TABLE campaign_leads
 CREATE INDEX IF NOT EXISTS idx_campaign_leads_thread_sync
   ON campaign_leads (last_thread_synced_at NULLS FIRST);`,
     },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 18: daily_send_count counter on email_accounts (00014_daily_send_count.sql)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add daily_send_count column to email_accounts and schedule nightly reset',
+      sql: `
+ALTER TABLE email_accounts
+  ADD COLUMN IF NOT EXISTS daily_send_count integer NOT NULL DEFAULT 0;
+
+SELECT cron.unschedule('reset-daily-send-counts')
+  FROM cron.job
+  WHERE jobname = 'reset-daily-send-counts';
+
+SELECT cron.schedule(
+  'reset-daily-send-counts',
+  '0 0 * * *',
+  $$UPDATE email_accounts SET daily_send_count = 0;$$
+);`,
+    },
   ]
 }
 

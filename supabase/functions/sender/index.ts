@@ -99,6 +99,8 @@ interface EmailAccount {
   service_account_client_email: string
   service_account_private_key: string
   daily_send_limit: number
+  /** Running count for today (UTC). Incremented after each send; reset at midnight by pg_cron. */
+  daily_send_count: number
   min_seconds_between_sends: number
   next_available_at: string | null
   last_sent_at: string | null
@@ -161,10 +163,47 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // 2. Fetch all active campaigns
+    // 2. Early-exit guard: cheaply check if there is any sendable work before
+    //    pulling the full campaign payload. Avoids heavy PostgREST egress on the
+    //    vast majority of ticks where nothing is due.
+    const now = new Date().toISOString()
+    const { data: workCheck } = await supabase
+      .from('campaign_leads')
+      .select('id')
+      .in('status', ['pending', 'active'])
+      .or(`next_send_at.is.null,next_send_at.lte.${now}`)
+      .limit(1)
+
+    if (!workCheck || workCheck.length === 0) {
+      return jsonResponse({ status: 'ok', message: 'No sendable leads', ...results })
+    }
+
+    // 2b. Inbox early-exit: check if at least one inbox is active, past its
+    //     cooldown, and still under its daily send limit. Fetches only 2 integer
+    //     fields — no private key, no joins. Eliminates the campaign/steps/leads
+    //     fetches on ticks where all inboxes are saturated.
+    {
+      const nowInbox = new Date().toISOString()
+      const { data: inboxCheck } = await supabase
+        .from('email_accounts')
+        .select('daily_send_count, daily_send_limit')
+        .eq('is_active', true)
+        .eq('status', 'active')
+        .or(`next_available_at.is.null,next_available_at.lte.${nowInbox}`)
+
+      const hasEligibleInbox = (inboxCheck ?? []).some(
+        (i) => (i.daily_send_count ?? 0) < i.daily_send_limit
+      )
+      if (!hasEligibleInbox) {
+        return jsonResponse({ status: 'ok', message: 'No eligible inboxes', ...results })
+      }
+    }
+
+    // 3. Fetch all active campaigns (only the columns needed for the working-window
+    //    check and send logic — never select '*' to avoid pulling unused data).
     const { data: campaigns, error: campErr } = await supabase
       .from('campaigns')
-      .select('*')
+      .select('id, name, status, timezone, working_days, working_hours_start, working_hours_end, send_priority, limit_emails_per_company')
       .eq('status', 'active')
 
     if (campErr) throw campErr
@@ -225,10 +264,19 @@ Deno.serve(async (req: Request) => {
 
       if (dueCampaignLeads.length === 0) continue
 
-      // 6. Fetch campaign's assigned inboxes
+      // 6. Fetch campaign's assigned inboxes — lightweight columns only.
+      //    Critically, service_account_private_key (~1.7 KB per inbox) is NOT
+      //    fetched here. It is fetched individually only for the assigned inbox
+      //    right before a send actually occurs (step 12).
       const { data: accountRows } = await supabase
         .from('campaign_email_accounts')
-        .select('email_accounts(*)')
+        .select(`email_accounts(
+          id, email_address, display_name, first_name, last_name, role,
+          phone_number, signature, variables, service_account_client_email,
+          daily_send_limit, daily_send_count, min_seconds_between_sends,
+          next_available_at, last_sent_at, last_new_lead_sent_at,
+          is_active, status
+        )`)
         .eq('campaign_id', campaign.id)
 
       const allInboxes: EmailAccount[] = (accountRows ?? [])
@@ -237,33 +285,19 @@ Deno.serve(async (req: Request) => {
 
       if (allInboxes.length === 0) continue
 
-      // 7. Count campaign-only sends since UTC midnight per inbox
-      //    (does NOT count warmup emails sent outside this system)
-      const todayUtcStart = new Date()
-      todayUtcStart.setUTCHours(0, 0, 0, 0)
-
-      const { data: sendRows } = await supabase
-        .from('sends')
-        .select('email_account_id')
-        .eq('status', 'sent')
-        .gte('sent_at', todayUtcStart.toISOString())
-        .in('email_account_id', allInboxes.map((i) => i.id))
-
-      // Build mutable sends-today counter
-      const sendsToday = new Map<string, number>()
-      for (const row of sendRows ?? []) {
-        const key = (row as { email_account_id: string }).email_account_id
-        sendsToday.set(key, (sendsToday.get(key) ?? 0) + 1)
-      }
+      // 7. Per-inbox daily count comes directly from email_accounts.daily_send_count
+      //    (incremented atomically on each send, reset at UTC midnight by pg_cron).
+      //    No sends-table JOIN needed here.
 
       // 7b. Count campaign-only sends since UTC midnight per COMPANY for this
-      //     campaign. Mirrors the per-inbox `sendsToday` map above: built once
-      //     per run, checked in the lead loop, incremented after each send.
-      //     Only built when the campaign actually enables the limit.
+      //     campaign. Built once per run, only when the campaign enables the limit.
       const companyLimit = Math.max(0, Math.floor(campaign.limit_emails_per_company ?? 0))
       const companySendsToday = new Map<string, number>()
 
       if (companyLimit > 0) {
+        const todayUtcStart = new Date()
+        todayUtcStart.setUTCHours(0, 0, 0, 0)
+
         const { data: companySendRows } = await supabase
           .from('sends')
           .select('id, campaign_leads!inner(campaign_id, leads!inner(email))')
@@ -284,7 +318,7 @@ Deno.serve(async (req: Request) => {
       // 8. Determine initially eligible inboxes
       const now = new Date()
       const eligibleInboxes: EmailAccount[] = allInboxes.filter((inbox) =>
-        isInboxEligible(inbox, sendsToday, now)
+        isInboxEligible(inbox, now)
       )
 
       // 9. Process each due lead
@@ -334,7 +368,7 @@ Deno.serve(async (req: Request) => {
           // Re-evaluate inboxes that are eligible right now (cooldown + daily limit)
           const currentNow = new Date()
           const currentlyEligible = eligibleInboxes.filter((inbox) =>
-            isInboxEligible(inbox, sendsToday, currentNow)
+            isInboxEligible(inbox, currentNow)
           )
 
           if (currentlyEligible.length === 0) {
@@ -361,7 +395,7 @@ Deno.serve(async (req: Request) => {
             continue
           }
           // Skip (retry next minute) if that specific inbox is in cooldown or hit limit right now
-          if (!isInboxEligible(sameInbox, sendsToday, new Date())) {
+          if (!isInboxEligible(sameInbox, new Date())) {
             results.skipped++
             continue
           }
@@ -438,12 +472,27 @@ Deno.serve(async (req: Request) => {
           continue
         }
 
-        // 12. Get Gmail access token (with in-memory cache)
+        // 12. Fetch private key for the assigned inbox only now (column pruning:
+        //    this is the only moment we need the key, so we didn't pull it for
+        //    every inbox earlier — keeping the discovery query cheap).
+        const { data: inboxSecret, error: secretErr } = await supabase
+          .from('email_accounts')
+          .select('service_account_private_key')
+          .eq('id', assignedInbox.id)
+          .single()
+
+        if (secretErr || !inboxSecret?.service_account_private_key) {
+          results.errors.push(`Could not fetch private key for ${assignedInbox.email_address}`)
+          results.failed++
+          continue
+        }
+
+        // 13. Get Gmail access token (with in-memory cache)
         let accessToken: string
         try {
           accessToken = await getAccessToken(
             assignedInbox.service_account_client_email,
-            assignedInbox.service_account_private_key,
+            inboxSecret.service_account_private_key,
             assignedInbox.email_address,
           )
         } catch (err) {
@@ -454,7 +503,7 @@ Deno.serve(async (req: Request) => {
           continue
         }
 
-        // 13. Build and send email
+        // 14. Build and send email
         try {
           // Generate a unique Message-ID for this send
           const localMessageId = `<${crypto.randomUUID()}@outreach-smart>`
@@ -572,6 +621,9 @@ Deno.serve(async (req: Request) => {
           const inboxUpdate: Record<string, unknown> = {
             last_sent_at: lastSentAt,
             next_available_at: nextAvailableAt,
+            // Atomically increment the daily counter so no sends-table JOIN is
+            // needed on the next cron tick to know how many this inbox has sent today.
+            daily_send_count: (assignedInbox.daily_send_count ?? 0) + 1,
           }
           if (isFirstTouch) {
             inboxUpdate.last_new_lead_sent_at = lastSentAt
@@ -582,9 +634,7 @@ Deno.serve(async (req: Request) => {
             .eq('id', assignedInbox.id)
 
           // 18. Update in-memory inbox state for the rest of this run
-          const todayCount = sendsToday.get(assignedInbox.id) ?? 0
-          const newCount = todayCount + 1
-          sendsToday.set(assignedInbox.id, newCount)
+          const newCount = (assignedInbox.daily_send_count ?? 0) + 1
 
           // Same for the per-company counter, so later leads in this same run
           // see the company as already used up.
@@ -600,10 +650,14 @@ Deno.serve(async (req: Request) => {
           if (inAll) {
             inAll.next_available_at = nextAvailableAt
             inAll.last_sent_at = lastSentAt
+            inAll.daily_send_count = newCount
             if (isFirstTouch) {
               inAll.last_new_lead_sent_at = lastSentAt
             }
           }
+          // Mirror on the assignedInbox reference itself so eligibility re-checks
+          // within the same run see the updated count.
+          assignedInbox.daily_send_count = newCount
 
           // Update eligibleInboxes pool (remove if in cooldown or daily limit reached)
           const idxInEligible = eligibleInboxes.findIndex(
@@ -612,6 +666,7 @@ Deno.serve(async (req: Request) => {
           if (idxInEligible >= 0) {
             eligibleInboxes[idxInEligible].next_available_at = nextAvailableAt
             eligibleInboxes[idxInEligible].last_sent_at = lastSentAt
+            eligibleInboxes[idxInEligible].daily_send_count = newCount
             if (isFirstTouch) {
               eligibleInboxes[idxInEligible].last_new_lead_sent_at = lastSentAt
             }
@@ -693,14 +748,12 @@ function isWithinWorkingWindow(campaign: Campaign): boolean {
 
 function isInboxEligible(
   inbox: EmailAccount,
-  sendsToday: Map<string, number>,
   now: Date,
 ): boolean {
   if (!inbox.is_active || inbox.status !== 'active') return false
 
-  // Daily limit uses campaign-sends-only count (not warmup traffic)
-  const todayCount = sendsToday.get(inbox.id) ?? 0
-  if (todayCount >= inbox.daily_send_limit) return false
+  // Daily limit: use the counter column instead of querying sends each time
+  if ((inbox.daily_send_count ?? 0) >= inbox.daily_send_limit) return false
 
   // Per-inbox cooldown
   if (inbox.next_available_at && new Date(inbox.next_available_at) > now)
