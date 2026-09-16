@@ -84,8 +84,8 @@ export function InboxCard({ inbox }: InboxCardProps) {
     })
   }
 
-  // Handle daily limit save on blur
-  const handleDailyLimitBlur = () => {
+  // Handle daily limit save
+  const handleSaveDailyLimit = () => {
     if (dailyLimit === inbox.daily_send_limit) return
     startTransition(async () => {
       const res = await updateInboxSettings(inbox.id, { daily_send_limit: dailyLimit })
@@ -95,8 +95,8 @@ export function InboxCard({ inbox }: InboxCardProps) {
     })
   }
 
-  // Handle spacing cooldown save on blur
-  const handleMinSecondsBlur = () => {
+  // Handle spacing cooldown save
+  const handleSaveMinSeconds = () => {
     if (minSeconds === inbox.min_seconds_between_sends) return
     startTransition(async () => {
       const res = await updateInboxSettings(inbox.id, { min_seconds_between_sends: minSeconds })
@@ -200,6 +200,8 @@ export function InboxCard({ inbox }: InboxCardProps) {
   const sendsToday = inbox.sends_today || 0
   const sendPercent = dailyLimit > 0 ? Math.min(100, Math.round((sendsToday / dailyLimit) * 100)) : 0
   const isLimitReached = sendsToday >= dailyLimit
+  const isDailyLimitDirty = dailyLimit !== inbox.daily_send_limit
+  const isMinSecondsDirty = minSeconds !== inbox.min_seconds_between_sends
 
   return (
     <>
@@ -364,7 +366,6 @@ export function InboxCard({ inbox }: InboxCardProps) {
               max={500}
               value={dailyLimit}
               onChange={(e) => setDailyLimit(parseInt(e.target.value) || 0)}
-              onBlur={handleDailyLimitBlur}
               disabled={isPending}
               className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono font-semibold text-zinc-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
@@ -381,6 +382,21 @@ export function InboxCard({ inbox }: InboxCardProps) {
               style={{ width: `${sendPercent}%` }}
             />
           </div>
+          {isDailyLimitDirty && (
+            <button
+              type="button"
+              onClick={handleSaveDailyLimit}
+              disabled={isPending}
+              className="w-full mt-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-[11px] font-medium text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-3 h-3" />
+              )}
+              Save
+            </button>
+          )}
         </div>
 
         {/* Editable Minimum Spacing Cooldown */}
@@ -399,13 +415,27 @@ export function InboxCard({ inbox }: InboxCardProps) {
               max={3600}
               value={minSeconds}
               onChange={(e) => setMinSeconds(parseInt(e.target.value) || 0)}
-              onBlur={handleMinSecondsBlur}
               disabled={isPending}
               className="w-full px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono font-semibold text-zinc-100 focus:outline-none focus:ring-1 focus:ring-cyan-500"
             />
           </div>
           {/* Invisible spacer to match Daily Limit cell's progress bar height, keeping inputs aligned */}
           <div className="h-1.5 mt-1.5" />
+          {isMinSecondsDirty && (
+            <button
+              type="button"
+              onClick={handleSaveMinSeconds}
+              disabled={isPending}
+              className="w-full mt-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-[11px] font-medium text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isPending ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-3 h-3" />
+              )}
+              Save
+            </button>
+          )}
         </div>
 
         {/* Last Send Activity */}
