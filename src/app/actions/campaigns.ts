@@ -197,9 +197,14 @@ export async function getCampaignById(id: string): Promise<{
     if (campRes.error) return { success: false, error: campRes.error.message }
 
     const inboxIds = (inboxRes.data ?? []).map((r) => r.email_account_id)
-    const inboxes = (inboxRes.data ?? []).map(
-      (r) => r.email_accounts as unknown as EmailAccount
-    )
+    const inboxes = (inboxRes.data ?? []).map((r) => {
+      // Strip server-only credentials before passing to client components.
+      // Private keys and access tokens are only needed in Edge Functions/API routes.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { service_account_private_key: _pk, google_access_token: _tok, ...safe } =
+        (r.email_accounts as unknown as EmailAccount) ?? {}
+      return safe as EmailAccount
+    })
     const recipientIds = (recipRes.data ?? []).map((r) => r.recipient_id)
 
     return {
@@ -646,20 +651,28 @@ export async function getCampaignLeads(
     if (error) return { success: false, error: error.message }
     if (!rows || rows.length === 0) return { success: true, data: [] }
 
-    // Fetch replies and sends for these campaign leads to enrich status
-    const clIds = rows.map((r) => r.id)
+    // Fetch replies and sends for this campaign's leads to enrich status.
+    // Query by campaign_leads(campaign_id) relation instead of passing hundreds of UUIDs to .in(),
+    // which triggers HTTP 414 (URI Too Long) when a campaign has more than ~50-80 leads.
     const [repliesRes, sendsRes] = await Promise.all([
       supabase
         .from('replies')
-        .select('*')
-        .in('campaign_lead_id', clIds)
+        .select('*, campaign_leads!inner(campaign_id)')
+        .eq('campaign_leads.campaign_id', campaignId)
         .order('received_at', { ascending: false }),
       supabase
         .from('sends')
-        .select('*')
-        .in('campaign_lead_id', clIds)
+        .select('*, campaign_leads!inner(campaign_id)')
+        .eq('campaign_leads.campaign_id', campaignId)
         .order('sent_at', { ascending: false }),
     ])
+
+    if (repliesRes.error) {
+      console.error('[getCampaignLeads] Error fetching replies:', repliesRes.error)
+    }
+    if (sendsRes.error) {
+      console.error('[getCampaignLeads] Error fetching sends:', sendsRes.error)
+    }
 
     const repliesByCl = new Map<string, unknown>()
     for (const rep of repliesRes.data || []) {
@@ -811,6 +824,14 @@ export async function updateCampaignLeadState(
           .from('replies')
           .update({ llm_category: updates.reply_category })
           .eq('id', latestReply.id)
+      } else {
+        await supabase
+          .from('replies')
+          .insert({
+            campaign_lead_id: campaignLeadId,
+            classification: 'real',
+            llm_category: updates.reply_category,
+          })
       }
     }
 
@@ -823,9 +844,16 @@ export async function updateCampaignLeadState(
 }
 
 // ─── Bulk Campaign Lead State Updates ────────────────────────────────────────
-// Bulk equivalents of updateCampaignLeadState / removeLeadFromCampaign above,
-// following the same .in('id', ...) + error-handling pattern used by
-// bulkUpdateLeadStatus / bulkDeleteLeads in src/app/actions/leads.ts.
+// Bulk equivalents of updateCampaignLeadState / removeLeadFromCampaign above.
+// Batched in chunks of 50 to ensure URL lengths stay well within HTTP proxy limits.
+
+function chunkIds<T>(items: T[], size = 50): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
 
 /**
  * Bulk-restarts sequence from Step 1 for multiple campaign leads.
@@ -841,18 +869,21 @@ export async function bulkRestartCampaignLeads(
     }
 
     const supabase = supabaseAdmin()
-    const { error } = await supabase
-      .from('campaign_leads')
-      .update({
-        current_step: 0,
-        status: 'pending',
-        next_send_at: null,
-        thread_id: null,
-        last_message_id: null,
-      })
-      .in('id', campaignLeadIds)
+    const chunks = chunkIds(campaignLeadIds, 50)
+    for (const chunk of chunks) {
+      const { error } = await supabase
+        .from('campaign_leads')
+        .update({
+          current_step: 0,
+          status: 'pending',
+          next_send_at: null,
+          thread_id: null,
+          last_message_id: null,
+        })
+        .in('id', chunk)
 
-    if (error) return { success: false, error: error.message }
+      if (error) return { success: false, error: error.message }
+    }
 
     if (campaignId) revalidatePath(`/campaigns/${campaignId}`)
     revalidatePath('/campaigns')
@@ -876,12 +907,15 @@ export async function bulkPauseCampaignLeads(
     }
 
     const supabase = supabaseAdmin()
-    const { error } = await supabase
-      .from('campaign_leads')
-      .update({ status: 'paused', next_send_at: null })
-      .in('id', campaignLeadIds)
+    const chunks = chunkIds(campaignLeadIds, 50)
+    for (const chunk of chunks) {
+      const { error } = await supabase
+        .from('campaign_leads')
+        .update({ status: 'paused', next_send_at: null })
+        .in('id', chunk)
 
-    if (error) return { success: false, error: error.message }
+      if (error) return { success: false, error: error.message }
+    }
 
     if (campaignId) revalidatePath(`/campaigns/${campaignId}`)
     revalidatePath('/campaigns')
@@ -905,12 +939,15 @@ export async function bulkResumeCampaignLeads(
     }
 
     const supabase = supabaseAdmin()
-    const { error } = await supabase
-      .from('campaign_leads')
-      .update({ status: 'pending' })
-      .in('id', campaignLeadIds)
+    const chunks = chunkIds(campaignLeadIds, 50)
+    for (const chunk of chunks) {
+      const { error } = await supabase
+        .from('campaign_leads')
+        .update({ status: 'pending' })
+        .in('id', chunk)
 
-    if (error) return { success: false, error: error.message }
+      if (error) return { success: false, error: error.message }
+    }
 
     if (campaignId) revalidatePath(`/campaigns/${campaignId}`)
     revalidatePath('/campaigns')
@@ -934,9 +971,11 @@ export async function bulkRemoveCampaignLeads(
     }
 
     const supabase = supabaseAdmin()
-    const { error } = await supabase.from('campaign_leads').delete().in('id', campaignLeadIds)
-
-    if (error) return { success: false, error: error.message }
+    const chunks = chunkIds(campaignLeadIds, 50)
+    for (const chunk of chunks) {
+      const { error } = await supabase.from('campaign_leads').delete().in('id', chunk)
+      if (error) return { success: false, error: error.message }
+    }
 
     if (campaignId) revalidatePath(`/campaigns/${campaignId}`)
     revalidatePath('/campaigns')
@@ -946,4 +985,5 @@ export async function bulkRemoveCampaignLeads(
     return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
   }
 }
+
 

@@ -40,12 +40,16 @@ export async function getInboxes(): Promise<{
       }
     }
 
-    const enrichedInboxes: EmailAccount[] = ((inboxes as EmailAccount[]) || []).map((inbox) => ({
-      ...inbox,
-      sends_today: sendsCountByInbox[inbox.id] || 0,
-    }))
+    const enrichedInboxes: EmailAccount[] = ((inboxes as EmailAccount[]) || []).map((inbox) => {
+      // Strip server-only credentials — private keys and access tokens must not
+      // be serialized into RSC payloads and sent to the browser.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { service_account_private_key: _pk, google_access_token: _tok, ...safe } = inbox
+      return { ...safe, sends_today: sendsCountByInbox[inbox.id] || 0 } as EmailAccount
+    })
 
     return { success: true, data: enrichedInboxes }
+
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Failed to fetch inboxes'
     return { success: false, error: message }

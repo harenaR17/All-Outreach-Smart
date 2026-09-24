@@ -534,7 +534,19 @@ export function CampaignLeadsTab({ leads, totalSteps, campaignId, campaigns = []
 
                             {/* Reply Classification & Manual Override */}
                             <td className="py-3.5 px-4 max-w-xs">
-                              {item.status === 'replied' || item.latest_reply ? (
+                              {item.latest_reply?.classification === 'bounce' ? (
+                                <div className="space-y-0.5">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-400">
+                                    <AlertCircle className="w-3 h-3" />
+                                    Delivery Bounce
+                                  </span>
+                                  {item.latest_reply.snippet && (
+                                    <p className="text-[10px] text-zinc-500 truncate max-w-xs" title={item.latest_reply.snippet}>
+                                      {item.latest_reply.snippet}
+                                    </p>
+                                  )}
+                                </div>
+                              ) : item.status === 'replied' || item.latest_reply ? (
                                 <div className="space-y-1">
                                   <select
                                     value={currentCategory || 'undefined'}

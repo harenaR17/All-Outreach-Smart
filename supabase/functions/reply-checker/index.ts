@@ -342,6 +342,13 @@ Deno.serve(async (req: Request) => {
           if (geminiKeys.length > 0) {
             const llmRes = await classifyReplyWithGemini(fullBody, { leadCompany: company }, geminiKeys)
             llmCategory = llmRes.category
+            if (llmCategory === null) {
+              console.warn(
+                `[reply-checker] Gemini classification returned null for lead ${cl.lead_id} (msg ${msg.id}). ` +
+                `Reply will be stored with llm_category=null (shows as Undefined in UI). ` +
+                `Check Gemini key availability or model quota.`
+              )
+            }
 
             // Ambiguity retry: if single reply returns 'undefined' and earlier messages exist in thread
             if (llmCategory === 'undefined' && i > 0) {
