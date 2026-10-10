@@ -29,6 +29,7 @@ export interface SmartBoxLead {
   emailAccountId: string | null
   /** email_accounts.email for the assigned sending inbox; null before the lead's first send */
   inboxEmail: string | null
+  conversationMonitoring: boolean
   latestReply: SmartBoxLatestReply
 }
 
@@ -99,7 +100,7 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
     const { data: leadRows, error: leadsErr } = await supabase
       .from('campaign_leads')
       .select(
-        'id, campaign_id, lead_id, status, thread_id, email_account_id, campaigns(id, name), leads(id, email, variables), email_accounts(id, email_address)'
+        'id, campaign_id, lead_id, status, thread_id, email_account_id, conversation_monitoring, campaigns(id, name), leads(id, email, variables), email_accounts(id, email_address)'
       )
       .in('id', eligibleLeadIds)
 
@@ -115,6 +116,7 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
         variables: Record<string, unknown>
       } | null
       const emailAccount = row.email_accounts as unknown as { id: string; email_address: string } | null
+      const rawMonitoring = (row as unknown as { conversation_monitoring?: boolean }).conversation_monitoring
 
       return {
         id: row.id,
@@ -127,6 +129,7 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
         threadId: row.thread_id,
         emailAccountId: emailAccount?.id || row.email_account_id,
         inboxEmail: emailAccount?.email_address || null,
+        conversationMonitoring: rawMonitoring ?? true,
         latestReply: latestReplyByLead.get(row.id)!,
       }
     })
@@ -174,6 +177,30 @@ export async function getLeadThreadMessages(campaignLeadId: string): Promise<{
     if (error) return { success: false, error: error.message }
 
     return { success: true, data: (data || []) as ThreadMessage[] }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+// ─── setConversationMonitoring ──────────────────────────────────────────────
+
+/**
+ * Updates campaign_leads.conversation_monitoring for a specific lead.
+ * When enabled (true), the reply checker will continue alerting Telegram on new inbound messages.
+ */
+export async function setConversationMonitoring(
+  campaignLeadId: string,
+  enabled: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = supabaseAdmin()
+    const { error } = await supabase
+      .from('campaign_leads')
+      .update({ conversation_monitoring: enabled })
+      .eq('id', campaignLeadId)
+
+    if (error) return { success: false, error: error.message }
+    return { success: true }
   } catch (err: unknown) {
     return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
   }

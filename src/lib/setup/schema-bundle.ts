@@ -504,6 +504,16 @@ SELECT cron.schedule(
   $$UPDATE email_accounts SET daily_send_count = 0;$$
 );`,
     },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 19: conversation_monitoring column on campaign_leads (00015_conversation_monitoring.sql)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add conversation_monitoring column to campaign_leads',
+      sql: `
+ALTER TABLE campaign_leads
+  ADD COLUMN IF NOT EXISTS conversation_monitoring boolean NOT NULL DEFAULT true;`,
+    },
   ]
 }
 

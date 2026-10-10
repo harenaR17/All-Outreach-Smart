@@ -14,7 +14,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { classifyReplyWithGemini, type GeminiKeyItem, type ReplyCategory } from '../_shared/gemini.ts'
-import { notifyAllRecipients, type TelegramRecipientItem, type ReplyAlertContext } from '../_shared/telegram.ts'
+import { notifyAllRecipients, type TelegramRecipientItem, type ReplyAlertContext, type ConversationAlertContext } from '../_shared/telegram.ts'
 import {
   getGmailAccessToken,
   getHeader,
@@ -43,6 +43,7 @@ interface CampaignLeadRow {
   email_account_id: string | null
   thread_id: string
   status: string
+  conversation_monitoring: boolean
   current_step: number
   last_reply_checked_at?: string | null
   campaigns: {
@@ -117,6 +118,7 @@ Deno.serve(async (req: Request) => {
     autoReplies: 0,
     realReplies: 0,
     telegramNotificationsSent: 0,
+    conversationAlertsSent: 0,
     errors: [] as string[],
     timestamp: new Date().toISOString(),
   }
@@ -142,7 +144,7 @@ Deno.serve(async (req: Request) => {
 
     // 3. Fetch candidate campaign_leads with an open thread_id, ordered by
     // least-recently-checked (nulls first) to implement round-robin fair queueing.
-    const [threadsRes, repliesRes] = await Promise.all([
+    const [threadsRes, repliesRes, syncedMsgsRes] = await Promise.all([
       supabase
         .from('campaign_leads')
         .select('*, campaigns!inner(*), leads!inner(*), email_accounts!inner(*)')
@@ -152,6 +154,9 @@ Deno.serve(async (req: Request) => {
       supabase
         .from('replies')
         .select('campaign_lead_id, gmail_message_id, classification, llm_category'),
+      supabase
+        .from('thread_messages')
+        .select('campaign_lead_id, gmail_message_id'),
     ])
 
     if (threadsRes.error) throw threadsRes.error
@@ -163,6 +168,14 @@ Deno.serve(async (req: Request) => {
         .map((r) => r.gmail_message_id)
         .filter(Boolean),
     )
+
+    // Build Map<campaignLeadId, Set<gmailMessageId>> of already-synced messages in SmartBox
+    const syncedMsgsByLead = new Map<string, Set<string>>()
+    for (const row of (syncedMsgsRes.data || []) as Array<{ campaign_lead_id: string; gmail_message_id: string }>) {
+      const set = syncedMsgsByLead.get(row.campaign_lead_id) ?? new Set<string>()
+      set.add(row.gmail_message_id)
+      syncedMsgsByLead.set(row.campaign_lead_id, set)
+    }
 
     // Index replies by campaign_lead_id to evaluate reply/bounce history
     const repliesByLeadId = new Map<string, Array<{ classification: string; llm_category: string | null }>>()
@@ -177,8 +190,8 @@ Deno.serve(async (req: Request) => {
     // - Check active leads in sequence
     // - Check leads marked completed that have not received any real reply
     // - Check leads marked out of office (auto/out_of_office reply, awaiting potential real reply)
+    // - Check leads with a real reply IF conversation_monitoring is enabled (ongoing conversation watch)
     // - Skip any leads that bounced (status/lead status bounced or has bounce reply)
-    // - Skip leads that already received a real reply
     const eligibleThreads = (candidateThreads as unknown as CampaignLeadRow[]).filter((cl) => {
       if (!cl.email_accounts) return false
 
@@ -190,7 +203,11 @@ Deno.serve(async (req: Request) => {
         leadReplies.some((r) => r.classification === 'bounce')
 
       if (hasBounce) return false
-      if (hasRealReply) return false
+
+      if (hasRealReply) {
+        // Include only if conversation monitoring is enabled (defaults to true)
+        return cl.conversation_monitoring !== false
+      }
 
       // 1. Active sequence leads
       if (cl.status === 'active') return true
@@ -206,6 +223,15 @@ Deno.serve(async (req: Request) => {
 
       return false
     })
+
+    const conversationWatchLeadIds = new Set<string>(
+      (candidateThreads as unknown as CampaignLeadRow[])
+        .filter((cl) => {
+          const leadReplies = repliesByLeadId.get(cl.id) || []
+          return leadReplies.some((r) => r.classification === 'real') && cl.conversation_monitoring !== false
+        })
+        .map((cl) => cl.id)
+    )
 
     // Take top BATCH_SIZE (150) from the round-robin queue
     const openThreads = eligibleThreads.slice(0, BATCH_SIZE)
@@ -243,6 +269,59 @@ Deno.serve(async (req: Request) => {
 
             const messages = threadRes.messages
             if (messages.length <= 1) return // Only our original outbound email exists
+
+            const isConvoWatch = conversationWatchLeadIds.has(cl.id)
+
+            if (isConvoWatch) {
+              // ── Conversation-watch path (no Gemini, no replies table insert) ──
+              const syncedIds = syncedMsgsByLead.get(cl.id) ?? new Set<string>()
+
+              for (let i = 1; i < messages.length; i++) {
+                const msg = messages[i]
+                if (existingMsgIds.has(msg.id)) continue // already logged in replies table
+                if (syncedIds.has(msg.id)) continue     // already recorded in thread_messages -> already notified
+
+                const headers = msg.payload?.headers || []
+                const fromHeader = getHeader(headers, 'from') || ''
+                const isSentByUs = (msg.labelIds && msg.labelIds.includes('SENT')) || fromHeader.includes(inbox.email_address)
+                if (isSentByUs) continue
+
+                const snippet = msg.snippet || ''
+                const fullBody = extractPlainTextBody(msg.payload) || snippet
+                const company = (lead.variables?.company as string) || null
+
+                const assignedRecipIds = campaignRecipientsMap.get(campaign.id)
+                const targetsToNotify = (assignedRecipIds && assignedRecipIds.size > 0)
+                  ? telegramRecipients.filter((r) => assignedRecipIds.has(r.id))
+                  : telegramRecipients
+
+                if (targetsToNotify.length > 0) {
+                  const alertCtx: ConversationAlertContext = {
+                    leadEmail: lead.email,
+                    leadCompany: company,
+                    campaignName: campaign.name,
+                    inboxEmail: inbox.email_address,
+                    snippet: snippet || fullBody.slice(0, 300),
+                    receivedAt: new Date().toISOString(),
+                  }
+                  const tgResult = await notifyAllRecipients(targetsToNotify, alertCtx, telegramBotToken, 'conversation')
+                  results.telegramNotificationsSent += tgResult.sentCount
+                  results.conversationAlertsSent += tgResult.sentCount
+                }
+              }
+
+              // Always sync thread_messages so new messages are deduped on future runs
+              const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address)
+              if (syncResult.error) {
+                results.errors.push(`thread_messages sync failed for lead ${cl.lead_id}: ${syncResult.error}`)
+              } else {
+                await supabase
+                  .from('campaign_leads')
+                  .update({ last_thread_synced_at: new Date().toISOString() })
+                  .eq('id', cl.id)
+              }
+              return
+            }
 
             let hasNewNonBounceReply = false
 

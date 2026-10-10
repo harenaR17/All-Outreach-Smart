@@ -20,6 +20,15 @@ export interface ReplyAlertContext {
   receivedAt?: string
 }
 
+export interface ConversationAlertContext {
+  leadEmail: string
+  leadCompany?: string | null
+  campaignName: string
+  inboxEmail: string
+  snippet: string
+  receivedAt?: string
+}
+
 const CATEGORY_BADGES: Record<string, { label: string; icon: string }> = {
   interested: { label: 'INTERESTED', icon: '🎯' },
   not_interested: { label: 'NOT INTERESTED', icon: '🛑' },
@@ -50,6 +59,31 @@ export function formatTelegramReplyMessage(ctx: ReplyAlertContext): string {
 
   const lines = [
     `${headerIcon} *${categoryTitle}*`,
+    ``,
+    `👤 *Lead:* \`${escapedEmail}\``,
+    escapedCompany ? `🏢 *Company:* ${escapedCompany}` : null,
+    `📢 *Campaign:* ${escapedCampaign}`,
+    `📧 *Inbox:* \`${escapedInbox}\``,
+    ``,
+    `💬 *Reply Snippet:*`,
+    `> ${escapedSnippet}`,
+    ``,
+    `⏱️ _${escapedTime}_`,
+  ].filter(Boolean)
+
+  return lines.join('\n')
+}
+
+export function formatConversationContinueMessage(ctx: ConversationAlertContext): string {
+  const escapedSnippet = escapeMd(ctx.snippet).slice(0, 1000)
+  const escapedEmail = escapeMd(ctx.leadEmail)
+  const escapedInbox = escapeMd(ctx.inboxEmail)
+  const escapedCampaign = escapeMd(ctx.campaignName)
+  const escapedCompany = ctx.leadCompany ? escapeMd(ctx.leadCompany) : null
+  const escapedTime = escapeMd(new Date(ctx.receivedAt || Date.now()).toUTCString())
+
+  const lines = [
+    `🔔 *CONVERSATION CONTINUES*`,
     ``,
     `👤 *Lead:* \`${escapedEmail}\``,
     escapedCompany ? `🏢 *Company:* ${escapedCompany}` : null,
@@ -99,10 +133,13 @@ export async function sendTelegramNotification(
 
 export async function notifyAllRecipients(
   recipients: TelegramRecipientItem[],
-  ctx: ReplyAlertContext,
-  fallbackBotToken?: string
+  ctx: ReplyAlertContext | ConversationAlertContext,
+  fallbackBotToken?: string,
+  mode: 'reply' | 'conversation' = 'reply'
 ): Promise<{ sentCount: number; errors: string[] }> {
-  const message = formatTelegramReplyMessage(ctx)
+  const message = mode === 'conversation'
+    ? formatConversationContinueMessage(ctx as ConversationAlertContext)
+    : formatTelegramReplyMessage(ctx as ReplyAlertContext)
   let sentCount = 0
   const errors: string[] = []
 

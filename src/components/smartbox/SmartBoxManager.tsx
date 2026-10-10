@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef, useTransition } from 'react'
 import type { SmartBoxLead } from '@/app/actions/smartbox'
-import { getLeadThreadMessages } from '@/app/actions/smartbox'
+import { getLeadThreadMessages, setConversationMonitoring } from '@/app/actions/smartbox'
 import { CATEGORY_BADGES, REPLY_CATEGORY_ORDER, type ReplyCategory } from '@/lib/constants/replyCategories'
 import { formatDate } from '@/lib/utils'
 import type { ThreadMessage } from '@/lib/types/database'
@@ -20,6 +20,8 @@ import {
   X,
   ChevronRight,
   Mail,
+  Bell,
+  BellOff,
 } from 'lucide-react'
 
 interface Props {
@@ -53,6 +55,11 @@ export function SmartBoxManager({ initialLeads }: Props) {
   const [threadMessages, setThreadMessages] = useState<ThreadMessage[]>([])
   const [threadError, setThreadError] = useState<string | null>(null)
   const [isThreadPending, startThreadTransition] = useTransition()
+
+  const [monitoringOverrides, setMonitoringOverrides] = useState<Record<string, boolean>>({})
+
+  const effectiveMonitoring = (lead: SmartBoxLead) =>
+    monitoringOverrides[lead.id] ?? lead.conversationMonitoring
 
   // Close the filter popover on an outside click.
   useEffect(() => {
@@ -360,24 +367,24 @@ export function SmartBoxManager({ initialLeads }: Props) {
         <div className="lg:col-span-4 space-y-4">
           {selectedLead ? (
             <>
-              {/* Lead Header — click to open the Lead Fields drawer */}
-              <button
-                type="button"
-                onClick={() => setIsVariablesOpen(true)}
-                className="w-full text-left rounded-2xl bg-zinc-900/40 border border-zinc-800/80 p-4 flex items-center justify-between gap-3 cursor-pointer hover:bg-zinc-900/60 hover:border-indigo-700 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
+              {/* Lead Header */}
+              <div className="w-full rounded-2xl bg-zinc-900/40 border border-zinc-800/80 p-4 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsVariablesOpen(true)}
+                  className="flex items-center gap-3 min-w-0 text-left cursor-pointer group hover:opacity-90 transition-opacity"
+                >
                   <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
                     <UserCircle2 className="w-4.5 h-4.5" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-zinc-100 truncate">{selectedLead.leadEmail}</p>
+                    <p className="text-sm font-semibold text-zinc-100 truncate group-hover:text-indigo-300 transition-colors">{selectedLead.leadEmail}</p>
                     <p className="text-[11px] text-zinc-400 flex items-center gap-1 truncate">
                       <Megaphone className="w-3 h-3 shrink-0" />
                       {selectedLead.campaignName}
                     </p>
                   </div>
-                </div>
+                </button>
                 <div className="flex items-center gap-2 shrink-0">
                   {selectedLead.latestReply.llmCategory && (
                     <span
@@ -386,13 +393,44 @@ export function SmartBoxManager({ initialLeads }: Props) {
                       {CATEGORY_BADGES[selectedLead.latestReply.llmCategory].label}
                     </span>
                   )}
-                  <span className="flex items-center gap-1 text-[11px] text-zinc-500">
+                  {/* Conversation monitoring toggle */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const current = effectiveMonitoring(selectedLead)
+                      setMonitoringOverrides((prev) => ({ ...prev, [selectedLead.id]: !current }))
+                      await setConversationMonitoring(selectedLead.id, !current)
+                    }}
+                    title={effectiveMonitoring(selectedLead) ? 'Monitoring active — click to mute' : 'Monitoring muted — click to resume'}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors cursor-pointer ${
+                      effectiveMonitoring(selectedLead)
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-rose-500/10 hover:border-rose-500/20 hover:text-rose-400'
+                        : 'bg-zinc-800/60 border-zinc-700 text-zinc-400 hover:bg-emerald-500/10 hover:border-emerald-500/20 hover:text-emerald-400'
+                    }`}
+                  >
+                    {effectiveMonitoring(selectedLead) ? (
+                      <>
+                        <Bell className="w-3 h-3" />
+                        Monitoring
+                      </>
+                    ) : (
+                      <>
+                        <BellOff className="w-3 h-3" />
+                        Muted
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsVariablesOpen(true)}
+                    className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+                  >
                     <ListFilter className="w-3.5 h-3.5" />
                     Fields
                     <ChevronRight className="w-3.5 h-3.5" />
-                  </span>
+                  </button>
                 </div>
-              </button>
+              </div>
 
               {/* Thread */}
               <div className="rounded-2xl bg-zinc-900/40 border border-zinc-800/80 hover:border-indigo-700 p-4 space-y-3">

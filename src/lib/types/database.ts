@@ -69,6 +69,7 @@ export type Database = {
       campaign_leads: {
         Row: {
           campaign_id: string
+          conversation_monitoring: boolean
           current_step: number
           email_account_id: string | null
           id: string
@@ -83,6 +84,7 @@ export type Database = {
         }
         Insert: {
           campaign_id: string
+          conversation_monitoring?: boolean
           current_step?: number
           email_account_id?: string | null
           id?: string
@@ -97,6 +99,7 @@ export type Database = {
         }
         Update: {
           campaign_id?: string
+          conversation_monitoring?: boolean
           current_step?: number
           email_account_id?: string | null
           id?: string
