@@ -207,18 +207,44 @@ export async function getLeads(params: GetLeadsParams = {}): Promise<{
 
     if (limit !== undefined) {
       query = query.range(offset, offset + limit - 1)
-    }
+      const { data, count, error } = await query
+      if (error) {
+        return { success: false, error: error.message }
+      }
+      return {
+        success: true,
+        data: (data as Lead[]) || [],
+        totalCount: count || 0,
+      }
+    } else {
+      // When no limit is passed (e.g. initial full load for client-side table),
+      // auto-chunk across PostgREST's max_rows boundary so the caller receives the complete dataset.
+      const CHUNK_SIZE = 1000
+      let currentOffset = 0
+      let allLeads: Lead[] = []
+      let totalCount = 0
 
-    const { data, count, error } = await query
+      while (true) {
+        const { data, count, error } = await query.range(currentOffset, currentOffset + CHUNK_SIZE - 1)
+        if (error) {
+          return { success: false, error: error.message }
+        }
+        if (count !== null && totalCount === 0) {
+          totalCount = count
+        }
+        const chunk = (data as Lead[]) || []
+        allLeads = allLeads.concat(chunk)
+        if (chunk.length < CHUNK_SIZE || (totalCount > 0 && allLeads.length >= totalCount)) {
+          break
+        }
+        currentOffset += CHUNK_SIZE
+      }
 
-    if (error) {
-      return { success: false, error: error.message }
-    }
-
-    return {
-      success: true,
-      data: (data as Lead[]) || [],
-      totalCount: count || 0,
+      return {
+        success: true,
+        data: allLeads,
+        totalCount: totalCount || allLeads.length,
+      }
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to fetch leads'
@@ -259,40 +285,31 @@ export async function getLeadsSummary(): Promise<{
 }> {
   try {
     const supabase = supabaseAdmin()
-    const [leadsRes, clRes] = await Promise.all([
-      supabase.from('leads').select('status'),
-      supabase.from('campaign_leads').select('status'),
+    const [
+      totalLeadsRes,
+      activeLeadsRes,
+      bouncedLeadsRes,
+      dncLeadsRes,
+      repliedClRes,
+      pendingClRes,
+    ] = await Promise.all([
+      supabase.from('leads').select('*', { count: 'exact', head: true }),
+      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'bounced'),
+      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'do_not_contact'),
+      supabase.from('campaign_leads').select('*', { count: 'exact', head: true }).eq('status', 'replied'),
+      supabase.from('campaign_leads').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
     ])
-
-    const leads = leadsRes.data || []
-    const cls = clRes.data || []
-
-    let active = 0
-    let bounced = 0
-    let doNotContact = 0
-
-    for (const l of leads) {
-      if (l.status === 'active') active++
-      else if (l.status === 'bounced') bounced++
-      else if (l.status === 'do_not_contact') doNotContact++
-    }
-
-    let replied = 0
-    let pending = 0
-    for (const cl of cls) {
-      if (cl.status === 'replied') replied++
-      else if (cl.status === 'pending') pending++
-    }
 
     return {
       success: true,
       data: {
-        total: leads.length,
-        active,
-        pending,
-        replied,
-        bounced,
-        doNotContact,
+        total: totalLeadsRes.count ?? 0,
+        active: activeLeadsRes.count ?? 0,
+        pending: pendingClRes.count ?? 0,
+        replied: repliedClRes.count ?? 0,
+        bounced: bouncedLeadsRes.count ?? 0,
+        doNotContact: dncLeadsRes.count ?? 0,
       },
     }
   } catch (err: unknown) {
