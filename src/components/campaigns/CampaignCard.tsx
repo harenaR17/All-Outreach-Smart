@@ -1,7 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Megaphone, Globe, Clock, Layers, Inbox, Users, ChevronRight, Pause, Play, Trash2, Copy, FolderOpen, MessageSquare, ThumbsUp } from 'lucide-react'
+import { Megaphone, Globe, Clock, Layers, Inbox, Users, Pause, Play, Trash2, Copy, FolderOpen, MessageSquare, ThumbsUp, Loader2 } from 'lucide-react'
 import type { CampaignWithMeta } from '@/app/actions/campaigns'
 
 const STATUS_STYLES: Record<string, { label: string; bg: string; text: string; dot: string }> = {
@@ -27,11 +28,24 @@ interface Props {
 export function CampaignCard({ campaign, onDelete, onTogglePause, onDuplicate }: Props) {
   const router = useRouter()
   const style = STATUS_STYLES[campaign.status] ?? STATUS_STYLES.draft
+  const [isNavigating, setIsNavigating] = useState(false)
+
+  const handleCardClick = () => {
+    if (isNavigating) return
+    setIsNavigating(true)
+    router.push(`/campaigns/${campaign.id}`)
+  }
 
   return (
-    <div className="group relative bg-zinc-900/40 border border-zinc-800 hover:border-indigo-700/80 rounded-2xl p-5 transition-all hover:bg-zinc-900/60 cursor-pointer"
-      onClick={() => router.push(`/campaigns/${campaign.id}`)}>
-
+    <div
+      className={`group relative bg-zinc-900/40 border rounded-2xl p-5 transition-all cursor-pointer ${
+        isNavigating
+          ? 'border-indigo-500/60 ring-1 ring-indigo-500/20 bg-zinc-900/60 pointer-events-none'
+          : 'border-zinc-800 hover:border-indigo-700/80 hover:bg-zinc-900/60'
+      }`}
+      onClick={handleCardClick}
+      onMouseEnter={() => router.prefetch(`/campaigns/${campaign.id}`)}
+    >
       {/* Status Badge */}
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
@@ -70,7 +84,7 @@ export function CampaignCard({ campaign, onDelete, onTogglePause, onDuplicate }:
         <Stat icon={<Inbox className="w-3 h-3" />} value={campaign.inboxCount} label="inboxes" />
         <Dot />
         <Stat icon={<Users className="w-3 h-3" />} value={campaign.leadCount} label="leads" />
-        <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className={`ml-auto flex items-center gap-1 transition-opacity ${isNavigating ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`}>
           {onDuplicate && (
             <button
               onClick={(e) => {
@@ -105,8 +119,11 @@ export function CampaignCard({ campaign, onDelete, onTogglePause, onDuplicate }:
             </button>
           )}
         </div>
-        <div className="flex items-center gap-1 text-[11px] text-zinc-400 group-hover:text-indigo-400 transition-colors ml-1">
-          <FolderOpen className="w-4 h-4" />
+        <div className="flex items-center gap-1 text-[11px] text-indigo-400 transition-colors ml-1">
+          {isNavigating
+            ? <Loader2 className="w-4 h-4 animate-spin" />
+            : <FolderOpen className="w-4 h-4 text-zinc-400 group-hover:text-indigo-400 transition-colors" />
+          }
         </div>
       </div>
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
   Mail,
@@ -20,8 +20,10 @@ import {
   Database,
   ChevronDown,
   Inbox,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useNavigation } from '@/lib/context/NavigationContext'
 
 const NAV_ITEMS = [
   { href: '/', label: 'Overview', icon: LayoutDashboard, badge: 'Phase 0' },
@@ -45,8 +47,16 @@ const API_DOCS_SECTIONS = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const isApiDocs = pathname === '/api-docs'
   const [activeSection, setActiveSection] = useState('overview')
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
+  const { isNavigating, setIsNavigating } = useNavigation()
+
+  // Reset local nav-item spinner once the route actually changes
+  useEffect(() => {
+    setNavigatingTo(null)
+  }, [pathname])
 
   useEffect(() => {
     if (!isApiDocs) return
@@ -80,6 +90,15 @@ export function Sidebar() {
     }
   }
 
+  const handleNavClick = (href: string) => {
+    if (navigatingTo || pathname === href) return
+    setNavigatingTo(href)
+    setIsNavigating(true)
+    router.push(href)
+  }
+
+  const isAnyNavigating = isNavigating || navigatingTo !== null
+
   return (
     <aside className="w-64 bg-zinc-950/90 border-r border-zinc-800/80 flex flex-col justify-between shrink-0 h-screen fixed top-0 left-0 bottom-0 z-40 backdrop-blur-xl">
       <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
@@ -103,31 +122,36 @@ export function Sidebar() {
 
         {/* Navigation Items */}
         <nav className="p-3 space-y-1 flex-1 overflow-y-auto">
-          {/* <div className="px-3 py-2 text-[10px] font-medium text-zinc-400 uppercase tracking-wider">
-            Main Navigation
-          </div> */}
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon
             const isActive = pathname === item.href
+            const isThisNavigating = navigatingTo === item.href
 
             return (
               <div key={item.href} className="space-y-1">
-                <Link
-                  href={item.href}
+                <button
+                  onClick={() => handleNavClick(item.href)}
+                  disabled={isThisNavigating}
                   className={cn(
-                    'flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all group',
+                    'w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium transition-all group text-left',
                     isActive
                       ? 'bg-zinc-800/90 text-zinc-100 shadow-sm border border-zinc-700/60'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/80'
+                      : isThisNavigating
+                        ? 'bg-zinc-900/80 text-zinc-300 border border-zinc-700/40'
+                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/80'
                   )}
                 >
                   <div className="flex items-center gap-2.5">
-                    <Icon
-                      className={cn(
-                        'w-4 h-4 transition-colors',
-                        isActive ? 'text-indigo-400' : 'text-zinc-400 group-hover:text-zinc-300'
-                      )}
-                    />
+                    {isThisNavigating ? (
+                      <Loader2 className="w-4 h-4 text-indigo-400 animate-spin shrink-0" />
+                    ) : (
+                      <Icon
+                        className={cn(
+                          'w-4 h-4 transition-colors shrink-0',
+                          isActive ? 'text-indigo-400' : 'text-zinc-400 group-hover:text-zinc-300'
+                        )}
+                      />
+                    )}
                     <span>{item.label}</span>
                   </div>
 
@@ -144,7 +168,7 @@ export function Sidebar() {
                       {isActive && <ChevronDown className="w-3 h-3 text-indigo-400" />}
                     </span>
                   )}
-                </Link>
+                </button>
 
                 {/* Nested API Documentation Subsections */}
                 {item.href === '/api-docs' && isApiDocs && (
@@ -187,11 +211,20 @@ export function Sidebar() {
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-medium text-zinc-400">Database Engine</span>
           <div className="flex items-center gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span className="text-[10px] text-emerald-400 font-medium">Connected</span>
+            {isAnyNavigating ? (
+              <>
+                <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
+                <span className="text-[10px] text-indigo-400 font-medium">Loading...</span>
+              </>
+            ) : (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[10px] text-emerald-400 font-medium">Connected</span>
+              </>
+            )}
           </div>
         </div>
         <div className="text-[11px] text-zinc-400 space-y-1">

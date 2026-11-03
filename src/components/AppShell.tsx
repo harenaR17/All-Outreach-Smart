@@ -5,6 +5,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/components/auth/AuthContext'
 import { Sidebar } from '@/components/Sidebar'
 import { Header } from '@/components/Header'
+import { NavigationEvents } from '@/components/NavigationEvents'
+import { NavigationProvider } from '@/lib/context/NavigationContext'
 import { getSetupStatus, type SetupStatus } from '@/app/actions/setup'
 import { Loader2, Send } from 'lucide-react'
 
@@ -118,12 +120,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Authenticated Dashboard Layout
   return (
-    <div className="min-h-screen bg-zinc-950 flex">
-      <Sidebar />
-      <div className="flex-1 pl-64 flex flex-col min-w-0 min-h-screen">
-        <Header />
-        <main className="flex-1 pb-16">{children}</main>
+    <NavigationProvider>
+      <NavigationEvents />
+      <div className="min-h-screen bg-zinc-950 flex">
+        <Sidebar />
+        <div className="flex-1 pl-64 flex flex-col min-w-0 min-h-screen">
+          <Header />
+          <main className="flex-1 pb-16">{children}</main>
+        </div>
       </div>
-    </div>
+    </NavigationProvider>
   )
 }
