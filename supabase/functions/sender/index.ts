@@ -228,44 +228,7 @@ Deno.serve(async (req: Request) => {
       if (!steps || steps.length === 0) continue
       const campaignSteps = steps as CampaignStep[]
 
-      // 5. Fetch due campaign leads (buffer of up to 10 candidates to evaluate)
-      //    a) Pending leads (never contacted, current_step=0, status='pending')
-      //    b) Active leads with next_send_at <= now (follow-ups)
-      const remaining = 30
-
-      const [pendingRes, activeRes] = await Promise.all([
-        supabase
-          .from('campaign_leads')
-          .select('*, leads!inner(*)')
-          .eq('campaign_id', campaign.id)
-          .eq('status', 'pending')
-          .eq('current_step', 0)
-          .is('next_send_at', null)
-          .limit(remaining),
-        supabase
-          .from('campaign_leads')
-          .select('*, leads!inner(*)')
-          .eq('campaign_id', campaign.id)
-          .eq('status', 'active')
-          .lte('next_send_at', new Date().toISOString())
-          .order('next_send_at', { ascending: true })
-          .limit(remaining),
-      ])
-
-      const isFollowUpPriority = campaign.send_priority === 'follow_ups'
-      const dueCampaignLeads: CampaignLead[] = isFollowUpPriority
-        ? [
-            ...((activeRes.data ?? []) as CampaignLead[]),
-            ...((pendingRes.data ?? []) as CampaignLead[]),
-          ]
-        : [
-            ...((pendingRes.data ?? []) as CampaignLead[]),
-            ...((activeRes.data ?? []) as CampaignLead[]),
-          ]
-
-      if (dueCampaignLeads.length === 0) continue
-
-      // 6. Fetch campaign's assigned inboxes — lightweight columns only.
+            // 5. Fetch campaign's assigned inboxes — lightweight columns only.
       //    Critically, service_account_private_key (~1.7 KB per inbox) is NOT
       //    fetched here. It is fetched individually only for the assigned inbox
       //    right before a send actually occurs (step 12).
@@ -285,6 +248,59 @@ Deno.serve(async (req: Request) => {
         .filter(Boolean)
 
       if (allInboxes.length === 0) continue
+
+      // Filter inboxes that are active and enabled
+      const activeInboxes = allInboxes.filter(
+        (inbox) => inbox.is_active && inbox.status === 'active'
+      )
+      if (activeInboxes.length === 0) continue
+
+      // Inboxes eligible for follow-ups must be active and have remaining daily send capacity.
+      // Filtering follow-up candidates by these inbox IDs prevents deactivated, removed,
+      // or saturated inboxes from causing head-of-line blocking in the due queue (Option C).
+      const followUpEligibleInboxIds = activeInboxes
+        .filter((inbox) => (inbox.daily_send_count ?? 0) < inbox.daily_send_limit)
+        .map((inbox) => inbox.id)
+
+      // 6. Fetch due campaign leads (buffer of up to 30 candidates to evaluate)
+      //    a) Pending leads (never contacted, current_step=0, status='pending')
+      //    b) Active leads with next_send_at <= now whose inbox is active and under limit
+      const remaining = 30
+
+      const [pendingRes, activeRes] = await Promise.all([
+        supabase
+          .from('campaign_leads')
+          .select('*, leads!inner(*)')
+          .eq('campaign_id', campaign.id)
+          .eq('status', 'pending')
+          .eq('current_step', 0)
+          .is('next_send_at', null)
+          .limit(remaining),
+        followUpEligibleInboxIds.length > 0
+          ? supabase
+              .from('campaign_leads')
+              .select('*, leads!inner(*)')
+              .eq('campaign_id', campaign.id)
+              .eq('status', 'active')
+              .in('email_account_id', followUpEligibleInboxIds)
+              .lte('next_send_at', new Date().toISOString())
+              .order('next_send_at', { ascending: true })
+              .limit(remaining)
+          : Promise.resolve({ data: [] as CampaignLead[], error: null }),
+      ])
+
+      const isFollowUpPriority = campaign.send_priority === 'follow_ups'
+      const dueCampaignLeads: CampaignLead[] = isFollowUpPriority
+        ? [
+            ...((activeRes.data ?? []) as CampaignLead[]),
+            ...((pendingRes.data ?? []) as CampaignLead[]),
+          ]
+        : [
+            ...((pendingRes.data ?? []) as CampaignLead[]),
+            ...((activeRes.data ?? []) as CampaignLead[]),
+          ]
+
+      if (dueCampaignLeads.length === 0) continue
 
       // 7. Per-inbox daily count comes directly from email_accounts.daily_send_count
       //    (incremented atomically on each send, reset at UTC midnight by pg_cron).

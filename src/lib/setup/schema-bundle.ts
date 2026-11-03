@@ -514,6 +514,16 @@ SELECT cron.schedule(
 ALTER TABLE campaign_leads
   ADD COLUMN IF NOT EXISTS conversation_monitoring boolean NOT NULL DEFAULT true;`,
     },
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 20: Composite index for active follow-up queue lookups (00016)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add composite index for active follow-up queue on campaign_leads',
+      sql: `
+CREATE INDEX IF NOT EXISTS idx_campaign_leads_active_inbox
+  ON campaign_leads (campaign_id, email_account_id, next_send_at)
+  WHERE status = 'active';`,
+    },
   ]
 }
 
