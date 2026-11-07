@@ -17,6 +17,7 @@ export type Database = {
           key_hash: string
           label: string | null
           last_used_at: string | null
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -25,6 +26,7 @@ export type Database = {
           key_hash: string
           label?: string | null
           last_used_at?: string | null
+          user_id?: string
         }
         Update: {
           created_at?: string
@@ -33,6 +35,7 @@ export type Database = {
           key_hash?: string
           label?: string | null
           last_used_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -184,6 +187,7 @@ export type Database = {
           stop_on_auto_reply: boolean
           send_priority: "new_leads" | "follow_ups"
           limit_emails_per_company: number | null
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -197,6 +201,7 @@ export type Database = {
           stop_on_auto_reply?: boolean
           send_priority?: "new_leads" | "follow_ups"
           limit_emails_per_company?: number | null
+          user_id?: string
         }
         Update: {
           created_at?: string
@@ -210,6 +215,7 @@ export type Database = {
           stop_on_auto_reply?: boolean
           send_priority?: "new_leads" | "follow_ups"
           limit_emails_per_company?: number | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -238,6 +244,7 @@ export type Database = {
           signature: string | null
           status: "active" | "error"
           variables: Record<string, string>
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -263,6 +270,7 @@ export type Database = {
           signature?: string | null
           status?: "active" | "error"
           variables?: Record<string, string>
+          user_id?: string
         }
         Update: {
           created_at?: string
@@ -288,6 +296,7 @@ export type Database = {
           signature?: string | null
           status?: "active" | "error"
           variables?: Record<string, string>
+          user_id?: string
         }
         Relationships: []
       }
@@ -298,6 +307,7 @@ export type Database = {
           id: string
           is_active: boolean
           label: string | null
+          user_id: string
         }
         Insert: {
           api_key: string
@@ -305,6 +315,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string | null
+          user_id?: string
         }
         Update: {
           api_key?: string
@@ -312,6 +323,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -324,6 +336,7 @@ export type Database = {
           imported_at: string
           new_leads: number
           total_rows: number
+          user_id: string
         }
         Insert: {
           campaign_id?: string | null
@@ -333,6 +346,7 @@ export type Database = {
           imported_at?: string
           new_leads?: number
           total_rows?: number
+          user_id?: string
         }
         Update: {
           campaign_id?: string | null
@@ -342,6 +356,7 @@ export type Database = {
           imported_at?: string
           new_leads?: number
           total_rows?: number
+          user_id?: string
         }
         Relationships: [
           {
@@ -363,6 +378,7 @@ export type Database = {
           status_changed_at: string | null
           status_reason: string | null
           variables: Record<string, string | number | boolean | null>
+          user_id: string
         }
         Insert: {
           created_at?: string
@@ -373,6 +389,7 @@ export type Database = {
           status_changed_at?: string | null
           status_reason?: string | null
           variables?: Record<string, string | number | boolean | null>
+          user_id?: string
         }
         Update: {
           created_at?: string
@@ -383,6 +400,7 @@ export type Database = {
           status_changed_at?: string | null
           status_reason?: string | null
           variables?: Record<string, string | number | boolean | null>
+          user_id?: string
         }
         Relationships: [
           {
@@ -531,6 +549,7 @@ export type Database = {
           id: string
           is_active: boolean
           label: string | null
+          user_id: string
         }
         Insert: {
           bot_token?: string
@@ -539,6 +558,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string | null
+          user_id?: string
         }
         Update: {
           bot_token?: string
@@ -547,6 +567,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string | null
+          user_id?: string
         }
         Relationships: []
       }

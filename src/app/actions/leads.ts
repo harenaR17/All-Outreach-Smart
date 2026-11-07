@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { supabaseAdmin } from '@/lib/supabase/server'
+import { supabaseAdmin, getAuthenticatedUser } from '@/lib/supabase/server'
 import type { Lead, LeadInsert, LeadUpdate } from '@/lib/types/database'
 import type { ParsedLeadRow } from '@/lib/leads/parser'
 
@@ -24,6 +24,7 @@ export interface ImportSummary {
 
 export async function importLeads(input: ImportLeadsInput): Promise<ImportSummary> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { filename, totalRowsFound, leads, campaignId } = input
 
@@ -38,10 +39,32 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
       }
     }
 
-    // 1. Create a lead_imports audit row
+    // Verify campaign ownership if specified
+    if (campaignId) {
+      const { data: campCheck } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('id', campaignId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (!campCheck) {
+        return {
+          success: false,
+          totalRows: totalRowsFound || 0,
+          newLeads: 0,
+          duplicateLeads: 0,
+          attachedToCampaign: 0,
+          error: 'Target campaign not found or access denied.',
+        }
+      }
+    }
+
+    // 1. Create a lead_imports audit row scoped to user
     const { data: importRecord, error: importErr } = await supabase
       .from('lead_imports')
       .insert({
+        user_id: user.id,
         filename: filename || 'manual_upload.csv',
         campaign_id: campaignId || null,
         total_rows: totalRowsFound,
@@ -64,20 +87,20 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
 
     const importId = importRecord.id
 
-    // 2. Perform deduplicated batch insert into `leads` table
-    // Construct payload
+    // 2. Perform deduplicated batch insert into `leads` table scoped to user
     const leadInsertPayload: LeadInsert[] = leads.map((l) => ({
-      email: l.email,
+      user_id: user.id,
+      email: l.email.trim().toLowerCase(),
       variables: l.variables,
       imported_via: importId,
       status: 'active',
     }))
 
-    // In Supabase / PostgREST, `upsert` with `ignoreDuplicates: true` translates to `ON CONFLICT (email) DO NOTHING`
+    // Upsert with ON CONFLICT (user_id, lower(email)) / (user_id, email) DO NOTHING
     const { data: insertedRows, error: insertErr } = await supabase
       .from('leads')
       .upsert(leadInsertPayload, {
-        onConflict: 'email',
+        onConflict: 'user_id, email',
         ignoreDuplicates: true,
       })
       .select('id, email')
@@ -105,16 +128,18 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
         duplicate_leads: duplicateLeadsCount,
       })
       .eq('id', importId)
+      .eq('user_id', user.id)
 
     // 4. If a target campaign was selected, attach all valid active leads to the campaign
     let attachedToCampaignCount = 0
 
     if (campaignId) {
-      // Get all lead IDs for the emails in this file (both newly created and existing)
-      const allEmails = leads.map((l) => l.email)
+      // Get all lead IDs for the emails in this file belonging to this user
+      const allEmails = leads.map((l) => l.email.trim().toLowerCase())
       const { data: existingLeads } = await supabase
         .from('leads')
         .select('id, email, status')
+        .eq('user_id', user.id)
         .in('email', allEmails)
 
       if (existingLeads && existingLeads.length > 0) {
@@ -139,15 +164,15 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
             })
             .select('id')
 
-          attachedToCampaignCount = attachedRows ? attachedRows.length : 0
+          attachedToCampaignCount = attachedRows ? attachedRows.length : eligibleLeads.length
         }
       }
     }
 
+    revalidatePath('/leads')
     if (campaignId) {
       revalidatePath(`/campaigns/${campaignId}`)
     }
-    revalidatePath('/leads')
     revalidatePath('/campaigns')
     revalidatePath('/')
 
@@ -160,7 +185,7 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
       attachedToCampaign: attachedToCampaignCount,
     }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Unknown import error'
+    const msg = err instanceof Error ? err.message : 'Unknown error during lead import'
     return {
       success: false,
       totalRows: input.totalRowsFound || 0,
@@ -173,10 +198,10 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
 }
 
 export interface GetLeadsParams {
-  page?: number
-  limit?: number | null
-  status?: 'active' | 'do_not_contact' | 'bounced' | 'all'
+  status?: string
   search?: string
+  page?: number
+  limit?: number
 }
 
 export async function getLeads(params: GetLeadsParams = {}): Promise<{
@@ -186,13 +211,14 @@ export async function getLeads(params: GetLeadsParams = {}): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const hasLimit = params.limit !== undefined && params.limit !== null
     const page = Math.max(1, params.page || 1)
     const limit = hasLimit ? Math.max(1, params.limit!) : undefined
     const offset = limit ? (page - 1) * limit : 0
 
-    let query = supabase.from('leads').select('*', { count: 'exact' })
+    let query = supabase.from('leads').select('*', { count: 'exact' }).eq('user_id', user.id)
 
     if (params.status && params.status !== 'all') {
       query = query.eq('status', params.status as Lead['status'])
@@ -254,10 +280,12 @@ export async function getLeads(params: GetLeadsParams = {}): Promise<{
 
 export async function getLeadImports() {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { data, error } = await supabase
       .from('lead_imports')
       .select('*, campaigns(name)')
+      .eq('user_id', user.id)
       .order('imported_at', { ascending: false })
 
     if (error) {
@@ -284,6 +312,7 @@ export async function getLeadsSummary(): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const [
       totalLeadsRes,
@@ -293,12 +322,12 @@ export async function getLeadsSummary(): Promise<{
       repliedClRes,
       pendingClRes,
     ] = await Promise.all([
-      supabase.from('leads').select('*', { count: 'exact', head: true }),
-      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'bounced'),
-      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'do_not_contact'),
-      supabase.from('campaign_leads').select('*', { count: 'exact', head: true }).eq('status', 'replied'),
-      supabase.from('campaign_leads').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('user_id', user.id),
+      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active'),
+      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'bounced'),
+      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'do_not_contact'),
+      supabase.from('campaign_leads').select('*, campaigns!inner(user_id)', { count: 'exact', head: true }).eq('campaigns.user_id', user.id).eq('status', 'replied'),
+      supabase.from('campaign_leads').select('*, campaigns!inner(user_id)', { count: 'exact', head: true }).eq('campaigns.user_id', user.id).eq('status', 'pending'),
     ])
 
     return {
@@ -323,6 +352,7 @@ export async function updateLeadStatus(
   reason?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const now = new Date().toISOString()
 
@@ -334,6 +364,7 @@ export async function updateLeadStatus(
         status_changed_at: now,
       })
       .eq('id', leadId)
+      .eq('user_id', user.id)
 
     if (updateErr) {
       return { success: false, error: updateErr.message }
@@ -363,8 +394,13 @@ export async function updateLeadStatus(
 
 export async function deleteLead(leadId: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
-    const { error } = await supabase.from('leads').delete().eq('id', leadId)
+    const { error } = await supabase
+      .from('leads')
+      .delete()
+      .eq('id', leadId)
+      .eq('user_id', user.id)
 
     if (error) {
       return { success: false, error: error.message }
@@ -392,6 +428,7 @@ export async function createSingleLead(input: {
   campaignId?: string | null
 }): Promise<{ success: boolean; data?: Lead; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const email = input.email.trim().toLowerCase()
     if (!email || !email.includes('@')) {
       return { success: false, error: 'A valid email address is required.' }
@@ -401,10 +438,11 @@ export async function createSingleLead(input: {
     const status = input.status || 'active'
     const variables = input.variables || {}
 
-    // 1. Insert into leads table
+    // 1. Insert into leads table with user_id
     const { data: newLead, error: insertErr } = await supabase
       .from('leads')
       .insert({
+        user_id: user.id,
         email,
         variables,
         status,
@@ -416,22 +454,31 @@ export async function createSingleLead(input: {
 
     if (insertErr) {
       if (insertErr.code === '23505') {
-        return { success: false, error: `A lead with email "${email}" already exists in the pool.` }
+        return { success: false, error: `A lead with email "${email}" already exists in your pool.` }
       }
       return { success: false, error: insertErr.message }
     }
 
     // 2. If target campaign is provided and status is active, attach to campaign
     if (input.campaignId && status === 'active' && newLead) {
-      await supabase.from('campaign_leads').upsert(
-        {
-          campaign_id: input.campaignId,
-          lead_id: newLead.id,
-          status: 'pending',
-          current_step: 0,
-        },
-        { onConflict: 'campaign_id,lead_id', ignoreDuplicates: true }
-      )
+      const { data: campCheck } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('id', input.campaignId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (campCheck) {
+        await supabase.from('campaign_leads').upsert(
+          {
+            campaign_id: input.campaignId,
+            lead_id: newLead.id,
+            status: 'pending',
+            current_step: 0,
+          },
+          { onConflict: 'campaign_id,lead_id', ignoreDuplicates: true }
+        )
+      }
     }
 
     if (input.campaignId) {
@@ -461,6 +508,7 @@ export async function updateLead(
   }
 ): Promise<{ success: boolean; data?: Lead; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const payload: Partial<LeadUpdate> = {}
 
@@ -486,12 +534,13 @@ export async function updateLead(
       .from('leads')
       .update(payload)
       .eq('id', leadId)
+      .eq('user_id', user.id)
       .select()
       .single()
 
     if (updateErr) {
       if (updateErr.code === '23505') {
-        return { success: false, error: 'Another lead is already using this email address.' }
+        return { success: false, error: 'Another lead in your pool is already using this email address.' }
       }
       return { success: false, error: updateErr.message }
     }
@@ -529,12 +578,26 @@ export async function assignLeadsToCampaign(
     if (!campaignId) return { success: false, error: 'Campaign ID is required.' }
     if (!leadIds || leadIds.length === 0) return { success: false, error: 'At least one lead must be selected.' }
 
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
 
-    // 1. Fetch eligible active leads from the pool
+    // 1. Verify target campaign belongs to user
+    const { data: campCheck } = await supabase
+      .from('campaigns')
+      .select('id')
+      .eq('id', campaignId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!campCheck) {
+      return { success: false, error: 'Campaign not found or access denied.' }
+    }
+
+    // 2. Fetch eligible active leads belonging to user
     const { data: activeLeads, error: fetchErr } = await supabase
       .from('leads')
       .select('id, status')
+      .eq('user_id', user.id)
       .in('id', leadIds)
       .eq('status', 'active')
 
@@ -543,7 +606,7 @@ export async function assignLeadsToCampaign(
       return { success: false, error: 'None of the selected leads are active (DNC or Bounced contacts cannot be added to campaigns).' }
     }
 
-    // 2. Upsert into campaign_leads table
+    // 3. Upsert into campaign_leads table
     const payload = activeLeads.map((l) => ({
       campaign_id: campaignId,
       lead_id: l.id,
@@ -584,6 +647,7 @@ export async function bulkUpdateLeadStatus(
   try {
     if (!leadIds || leadIds.length === 0) return { success: false, error: 'No leads selected' }
 
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const now = new Date().toISOString()
 
@@ -595,6 +659,7 @@ export async function bulkUpdateLeadStatus(
         status_changed_at: now,
       })
       .in('id', leadIds)
+      .eq('user_id', user.id)
 
     if (updateErr) return { success: false, error: updateErr.message }
 
@@ -620,14 +685,19 @@ export async function bulkUpdateLeadStatus(
 }
 
 /**
- * Bulk deletes multiple leads from the global pool.
+ * Bulk deletes multiple leads from the pool.
  */
 export async function bulkDeleteLeads(leadIds: string[]): Promise<{ success: boolean; error?: string }> {
   try {
     if (!leadIds || leadIds.length === 0) return { success: false, error: 'No leads selected' }
 
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
-    const { error } = await supabase.from('leads').delete().in('id', leadIds)
+    const { error } = await supabase
+      .from('leads')
+      .delete()
+      .in('id', leadIds)
+      .eq('user_id', user.id)
 
     if (error) return { success: false, error: error.message }
 

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
-import { getCampaignById, getCampaignLeads, getCampaigns } from '@/app/actions/campaigns'
+import { getCampaignById, getCampaignLeads, getCampaignsList } from '@/app/actions/campaigns'
 import { getInboxes } from '@/app/actions/inboxes'
 import { getLeads } from '@/app/actions/leads'
 import { getTelegramRecipients } from '@/app/actions/settings'
@@ -23,7 +23,7 @@ export default async function CampaignStudioPage({ params }: Props) {
     getLeads({ limit: 100 }),
     getCampaignLeads(id),
     getTelegramRecipients(),
-    getCampaigns(),
+    getCampaignsList(),
     getActivitySummaryStats(id),
     getActivityFeed({ campaignId: id, type: 'all' }),
   ])

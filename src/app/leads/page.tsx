@@ -1,5 +1,5 @@
 import { getLeads, getLeadImports } from '@/app/actions/leads'
-import { getCampaigns } from '@/app/actions/campaigns'
+import { getCampaignsList } from '@/app/actions/campaigns'
 import { LeadsManager } from '@/components/leads/LeadsManager'
 import { Users, UploadCloud, ShieldCheck } from 'lucide-react'
 
@@ -9,7 +9,7 @@ export default async function LeadsPage() {
   const [leadsRes, importsRes, campaignsRes] = await Promise.all([
     getLeads(),
     getLeadImports(),
-    getCampaigns(),
+    getCampaignsList(),
   ])
 
   const leads = leadsRes.data || []

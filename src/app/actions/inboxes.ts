@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { supabaseAdmin } from '@/lib/supabase/server'
+import { supabaseAdmin, getAuthenticatedUser } from '@/lib/supabase/server'
 import type { EmailAccount, EmailAccountInsert, EmailAccountUpdate } from '@/lib/types/database'
 import { verifyGmailInbox, sendSelfTestEmail, normalizePrivateKey } from '@/lib/google/auth'
 
@@ -11,36 +11,44 @@ export async function getInboxes(): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { data: inboxes, error } = await supabase
       .from('email_accounts')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) {
       return { success: false, error: error.message }
     }
 
-    // Calculate today's sends per inbox (since UTC midnight)
+    const inboxList = (inboxes as EmailAccount[]) || []
+    const inboxIds = inboxList.map((i) => i.id)
+
+    // Calculate today's sends per inbox (since UTC midnight) scoped to this user's inboxes
     const utcMidnight = new Date()
     utcMidnight.setUTCHours(0, 0, 0, 0)
 
-    const { data: sendsTodayData } = await supabase
-      .from('sends')
-      .select('email_account_id')
-      .eq('status', 'sent')
-      .gte('sent_at', utcMidnight.toISOString())
-
     const sendsCountByInbox: Record<string, number> = {}
-    if (sendsTodayData) {
-      for (const s of sendsTodayData) {
-        if (s.email_account_id) {
-          sendsCountByInbox[s.email_account_id] = (sendsCountByInbox[s.email_account_id] || 0) + 1
+    if (inboxIds.length > 0) {
+      const { data: sendsTodayData } = await supabase
+        .from('sends')
+        .select('email_account_id')
+        .eq('status', 'sent')
+        .in('email_account_id', inboxIds)
+        .gte('sent_at', utcMidnight.toISOString())
+
+      if (sendsTodayData) {
+        for (const s of sendsTodayData) {
+          if (s.email_account_id) {
+            sendsCountByInbox[s.email_account_id] = (sendsCountByInbox[s.email_account_id] || 0) + 1
+          }
         }
       }
     }
 
-    const enrichedInboxes: EmailAccount[] = ((inboxes as EmailAccount[]) || []).map((inbox) => {
+    const enrichedInboxes: EmailAccount[] = inboxList.map((inbox) => {
       // Strip server-only credentials — private keys and access tokens must not
       // be serialized into RSC payloads and sent to the browser.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -78,6 +86,7 @@ export async function addInbox(input: AddInboxInput): Promise<{
   remediation?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const emailAddress = input.emailAddress.trim().toLowerCase()
     const clientEmail = input.clientEmail.trim()
     const privateKey = normalizePrivateKey(input.privateKey)
@@ -131,11 +140,12 @@ export async function addInbox(input: AddInboxInput): Promise<{
       }
     }
 
-    // 3. Insert verified inbox into Supabase email_accounts table
+    // 3. Insert verified inbox into Supabase email_accounts table with user_id
     const supabase = supabaseAdmin()
     const { data, error } = await supabase
       .from('email_accounts')
       .insert({
+        user_id: user.id,
         email_address: emailAddress,
         display_name: displayName,
         first_name: firstName,
@@ -182,11 +192,13 @@ export async function testInboxConnection(inboxId: string): Promise<{
   remediation?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { data: inbox, error: fetchError } = await supabase
       .from('email_accounts')
       .select('*')
       .eq('id', inboxId)
+      .eq('user_id', user.id)
       .single()
 
     if (fetchError || !inbox) {
@@ -209,6 +221,7 @@ export async function testInboxConnection(inboxId: string): Promise<{
           google_token_expires_at: verification.tokenExpiresAt || null,
         })
         .eq('id', inboxId)
+        .eq('user_id', user.id)
 
       revalidatePath('/inboxes')
       revalidatePath('/')
@@ -221,6 +234,7 @@ export async function testInboxConnection(inboxId: string): Promise<{
           error_message: verification.error || 'Connection verification failed',
         })
         .eq('id', inboxId)
+        .eq('user_id', user.id)
 
       revalidatePath('/inboxes')
       revalidatePath('/')
@@ -245,11 +259,13 @@ export async function sendTestEmailAction(inboxId: string): Promise<{
   remediation?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { data: inbox, error: fetchError } = await supabase
       .from('email_accounts')
       .select('*')
       .eq('id', inboxId)
+      .eq('user_id', user.id)
       .single()
 
     if (fetchError || !inbox) {
@@ -272,6 +288,7 @@ export async function sendTestEmailAction(inboxId: string): Promise<{
           google_token_expires_at: testSend.tokenExpiresAt || null,
         })
         .eq('id', inboxId)
+        .eq('user_id', user.id)
 
       revalidatePath('/inboxes')
       revalidatePath('/')
@@ -284,6 +301,7 @@ export async function sendTestEmailAction(inboxId: string): Promise<{
           error_message: testSend.error || 'Test email send failed',
         })
         .eq('id', inboxId)
+        .eq('user_id', user.id)
 
       revalidatePath('/inboxes')
       revalidatePath('/')
@@ -315,6 +333,7 @@ export async function updateInboxSettings(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const updatePayload: EmailAccountUpdate = {}
 
@@ -353,6 +372,7 @@ export async function updateInboxSettings(
       .from('email_accounts')
       .update(updatePayload)
       .eq('id', inboxId)
+      .eq('user_id', user.id)
 
     if (error) {
       return { success: false, error: error.message }
@@ -369,8 +389,13 @@ export async function updateInboxSettings(
 
 export async function deleteInbox(inboxId: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
-    const { error } = await supabase.from('email_accounts').delete().eq('id', inboxId)
+    const { error } = await supabase
+      .from('email_accounts')
+      .delete()
+      .eq('id', inboxId)
+      .eq('user_id', user.id)
 
     if (error) {
       return { success: false, error: error.message }

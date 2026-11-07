@@ -2,7 +2,7 @@
 
 import { getGoogleAccessToken } from '@/lib/google/auth'
 import { extractSheetId } from '@/lib/google/sheets-url'
-import { supabaseAdmin } from '@/lib/supabase/server'
+import { supabaseAdmin, getAuthenticatedUser } from '@/lib/supabase/server'
 import { parseSpreadsheet, type ParseResult } from '@/lib/leads/parser'
 
 export interface FetchSheetResult {
@@ -40,10 +40,12 @@ export async function fetchGoogleSheetAsCSV(
 
   // Try Strategy A first: use stored service account credentials with native Web Crypto & REST API
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { data: accountRow } = await supabase
       .from('email_accounts')
       .select('service_account_client_email, service_account_private_key')
+      .eq('user_id', user.id)
       .not('service_account_client_email', 'is', null)
       .not('service_account_private_key', 'is', null)
       .limit(1)

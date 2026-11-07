@@ -1,6 +1,6 @@
 'use server'
 
-import { supabaseAdmin } from '@/lib/supabase/server'
+import { supabaseAdmin, getAuthenticatedUser } from '@/lib/supabase/server'
 
 export interface ActivityEvent {
   id: string
@@ -36,8 +36,8 @@ export interface ActivitySummaryStats {
 }
 
 /**
- * Aggregate send/reply KPIs. Pass `campaignId` to scope every count to a single
- * campaign (via the campaign_leads join); omit it for the global, all-campaigns view.
+ * Aggregate send/reply KPIs scoped strictly to the authenticated user's campaigns.
+ * Pass `campaignId` to scope every count to a single campaign.
  */
 export async function getActivitySummaryStats(campaignId?: string): Promise<{
   success: boolean
@@ -45,30 +45,37 @@ export async function getActivitySummaryStats(campaignId?: string): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
 
     const todayStart = new Date()
     todayStart.setUTCHours(0, 0, 0, 0)
     const todayIso = todayStart.toISOString()
 
-    // sends/replies don't carry campaign_id directly - it lives on campaign_leads,
-    // so scoping to a campaign requires an inner join through campaign_leads.
+    // Scoped to campaigns owned by the current user
     let sendsTodayQuery = supabase
       .from('sends')
-      .select('*, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+      .select('*, campaign_leads!inner(campaign_id, campaigns!inner(user_id))', { count: 'exact', head: true })
+      .eq('campaign_leads.campaigns.user_id', user.id)
       .eq('status', 'sent')
       .gte('sent_at', todayIso)
+
     let totalSendsQuery = supabase
       .from('sends')
-      .select('*, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+      .select('*, campaign_leads!inner(campaign_id, campaigns!inner(user_id))', { count: 'exact', head: true })
+      .eq('campaign_leads.campaigns.user_id', user.id)
       .eq('status', 'sent')
+
     let failedSendsQuery = supabase
       .from('sends')
-      .select('*, campaign_leads!inner(campaign_id)', { count: 'exact', head: true })
+      .select('*, campaign_leads!inner(campaign_id, campaigns!inner(user_id))', { count: 'exact', head: true })
+      .eq('campaign_leads.campaigns.user_id', user.id)
       .eq('status', 'failed')
+
     let repliesQuery = supabase
       .from('replies')
-      .select('classification, llm_category, campaign_leads!inner(campaign_id)')
+      .select('classification, llm_category, campaign_leads!inner(campaign_id, campaigns!inner(user_id))')
+      .eq('campaign_leads.campaigns.user_id', user.id)
 
     if (campaignId) {
       sendsTodayQuery = sendsTodayQuery.eq('campaign_leads.campaign_id', campaignId)
@@ -140,6 +147,7 @@ export async function getActivityFeed(options?: {
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const limit = options?.limit || 50
     const events: ActivityEvent[] = []
@@ -162,12 +170,13 @@ export async function getActivityFeed(options?: {
           sent_at,
           campaign_leads!inner(
             campaign_id,
-            campaigns(id, name),
+            campaigns!inner(id, name, user_id),
             leads(email, variables)
           ),
           email_accounts(email_address),
           campaign_steps(step_order)
         `)
+        .eq('campaign_leads.campaigns.user_id', user.id)
         .order('sent_at', { ascending: false })
         .limit(limit)
 
@@ -219,11 +228,12 @@ export async function getActivityFeed(options?: {
           snippet,
           campaign_leads!inner(
             campaign_id,
-            campaigns(id, name),
+            campaigns!inner(id, name, user_id),
             leads(email, variables),
             email_accounts(email_address)
           )
         `)
+        .eq('campaign_leads.campaigns.user_id', user.id)
         .order('received_at', { ascending: false })
         .limit(limit)
 

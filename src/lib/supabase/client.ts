@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 import type { Database } from '@/lib/types/database'
 
-let supabaseClient: ReturnType<typeof createClient<Database>> | null = null
+let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
 let dynamicSupabaseUrl: string | null = null
 let dynamicSupabaseAnonKey: string | null = null
 
@@ -36,12 +36,10 @@ export function isSupabaseBrowserConfigured(): boolean {
 }
 
 /**
- * Returns a singleton Supabase browser client, or null if:
+ * Returns a singleton Supabase browser client configured with cookie-based session persistence,
+ * or null if:
  * - Running on the server (SSR)
  * - Environment variables are not yet configured (pre-setup state)
- *
- * Returning null instead of throwing allows the app to boot
- * and redirect to /setup without crashing.
  */
 export function getSupabaseBrowserClient() {
   if (typeof window === 'undefined') {
@@ -51,19 +49,12 @@ export function getSupabaseBrowserClient() {
   const supabaseUrl = dynamicSupabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || getCookieValue('os_supabase_url')
   const supabaseAnonKey = dynamicSupabaseAnonKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || getCookieValue('os_supabase_anon_key')
 
-  // Return null gracefully instead of throwing fatal runtime error
   if (!supabaseUrl || !supabaseAnonKey) {
     return null
   }
 
   if (!supabaseClient) {
-    supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-    })
+    supabaseClient = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey)
   }
 
   return supabaseClient

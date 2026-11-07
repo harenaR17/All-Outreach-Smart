@@ -1,5 +1,5 @@
 import { listApiKeys } from '@/app/actions/settings'
-import { getCampaigns } from '@/app/actions/campaigns'
+import { getCampaignsList } from '@/app/actions/campaigns'
 import { ApiDocumentationView } from '@/components/api-docs/ApiDocumentationView'
 
 export const dynamic = 'force-dynamic'
@@ -12,7 +12,7 @@ export const metadata = {
 export default async function ApiDocsPage() {
   const [apiKeysRes, campaignsRes] = await Promise.all([
     listApiKeys(),
-    getCampaigns(),
+    getCampaignsList(),
   ])
 
   const apiKeys = apiKeysRes.data || []

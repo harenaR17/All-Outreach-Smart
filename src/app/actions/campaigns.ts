@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { supabaseAdmin } from '@/lib/supabase/server'
+import { supabaseAdmin, getAuthenticatedUser } from '@/lib/supabase/server'
 import type {
   Campaign,
   CampaignStep,
@@ -89,35 +89,77 @@ function normalizeCompanyLimitForCreate(value: number | null | undefined): numbe
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
+/**
+ * Lightweight list of campaigns without aggregated metric subqueries.
+ * Used for dropdown selectors (Leads page, Studio lead-move modal, ApiDocs).
+ * Executes in a single subrequest.
+ */
+export async function getCampaignsList(): Promise<{
+  success: boolean
+  data?: Campaign[]
+  error?: string
+}> {
+  try {
+    const user = await getAuthenticatedUser()
+    const supabase = supabaseAdmin()
+
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+
+    if (error) return { success: false, error: error.message }
+    return { success: true, data: (data as Campaign[]) || [] }
+  } catch (err: unknown) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
 export async function getCampaigns(): Promise<{
   success: boolean
   data?: CampaignWithMeta[]
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
 
     const { data, error } = await supabase
       .from('campaigns')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) return { success: false, error: error.message }
 
     const campaigns = data as Campaign[]
+    if (campaigns.length === 0) {
+      return { success: true, data: [] }
+    }
+
+    const campaignIds = campaigns.map((c) => c.id)
+
+    // Batch step counts and inbox counts across all campaigns in 2 subrequests instead of 2 * N
+    const [allStepsRes, allInboxesRes] = await Promise.all([
+      supabase.from('campaign_steps').select('campaign_id').in('campaign_id', campaignIds),
+      supabase.from('campaign_email_accounts').select('campaign_id').in('campaign_id', campaignIds),
+    ])
+
+    const stepCountMap = new Map<string, number>()
+    for (const step of allStepsRes.data ?? []) {
+      stepCountMap.set(step.campaign_id, (stepCountMap.get(step.campaign_id) || 0) + 1)
+    }
+
+    const inboxCountMap = new Map<string, number>()
+    for (const inbox of allInboxesRes.data ?? []) {
+      inboxCountMap.set(inbox.campaign_id, (inboxCountMap.get(inbox.campaign_id) || 0) + 1)
+    }
 
     // Fetch counts in parallel
     const withMeta = await Promise.all(
       campaigns.map(async (camp) => {
-        const [stepsRes, inboxRes, leadRes, sentRes, replyRes, positiveReplyRes] = await Promise.all([
-          supabase
-            .from('campaign_steps')
-            .select('id', { count: 'exact', head: true })
-            .eq('campaign_id', camp.id),
-          supabase
-            .from('campaign_email_accounts')
-            .select('email_account_id', { count: 'exact', head: true })
-            .eq('campaign_id', camp.id),
+        const [leadRes, sentRes, replyRes, positiveReplyRes] = await Promise.all([
           supabase
             .from('campaign_leads')
             .select('id', { count: 'exact', head: true })
@@ -148,8 +190,8 @@ export async function getCampaigns(): Promise<{
 
         return {
           ...camp,
-          stepCount: stepsRes.count ?? 0,
-          inboxCount: inboxRes.count ?? 0,
+          stepCount: stepCountMap.get(camp.id) ?? 0,
+          inboxCount: inboxCountMap.get(camp.id) ?? 0,
           leadCount: leadRes.count ?? 0,
           replyRate: sentCount > 0 ? replyCount / sentCount : 0,
           positiveReplyRate: sentCount > 0 ? positiveReplyCount / sentCount : 0,
@@ -171,10 +213,11 @@ export async function getCampaignById(id: string): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
 
     const [campRes, stepsRes, inboxRes, recipRes, leadCountRes] = await Promise.all([
-      supabase.from('campaigns').select('*').eq('id', id).single(),
+      supabase.from('campaigns').select('*').eq('id', id).eq('user_id', user.id).single(),
       supabase
         .from('campaign_steps')
         .select('*')
@@ -231,6 +274,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     // Leave limit_emails_per_company unset when the caller didn't provide a
     // value, so the DB column default (2) applies instead of forcing 0
@@ -239,6 +283,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
     const { data, error } = await supabase
       .from('campaigns')
       .insert({
+        user_id: user.id,
         name: input.name.trim(),
         status: 'draft',
         timezone: input.timezone,
@@ -257,9 +302,20 @@ export async function createCampaign(input: CreateCampaignInput): Promise<{
     if (error) return { success: false, error: error.message }
 
     if (input.recipientIds && input.recipientIds.length > 0) {
-      await supabase
-        .from('campaign_telegram_recipients')
-        .insert(input.recipientIds.map((rid) => ({ campaign_id: data.id, recipient_id: rid })))
+      const { data: validRecips } = await supabase
+        .from('telegram_notify_recipients')
+        .select('id')
+        .eq('user_id', user.id)
+        .in('id', input.recipientIds)
+
+      const validIds = new Set((validRecips || []).map((r) => r.id))
+      const safeRecipientIds = input.recipientIds.filter((rid) => validIds.has(rid))
+
+      if (safeRecipientIds.length > 0) {
+        await supabase
+          .from('campaign_telegram_recipients')
+          .insert(safeRecipientIds.map((rid) => ({ campaign_id: data.id, recipient_id: rid })))
+      }
     }
 
     revalidatePath('/campaigns')
@@ -290,6 +346,7 @@ export async function duplicateCampaign(sourceId: string): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const sourceResult = await getCampaignById(sourceId)
     if (!sourceResult.success || !sourceResult.data) {
       return { success: false, error: sourceResult.error || 'Campaign not found' }
@@ -301,6 +358,7 @@ export async function duplicateCampaign(sourceId: string): Promise<{
     const { data: newCampaign, error: campErr } = await supabase
       .from('campaigns')
       .insert({
+        user_id: user.id,
         name: `${source.name.trim()} (Copy)`,
         status: 'draft',
         timezone: source.timezone,
@@ -376,9 +434,10 @@ export async function saveCampaign(
   input: SaveCampaignInput
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
 
-    // 1. Update campaign settings
+    // 1. Update campaign settings (enforce ownership)
     const { error: campErr } = await supabase
       .from('campaigns')
       .update({
@@ -392,6 +451,7 @@ export async function saveCampaign(
         limit_emails_per_company: normalizeCompanyLimit(input.limit_emails_per_company),
       })
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (campErr) return { success: false, error: campErr.message }
 
@@ -440,7 +500,7 @@ export async function saveCampaign(
       }
     }
 
-    // 3. Replace inbox pool
+    // 3. Replace inbox pool (scoped to user's inboxes)
     const { error: delInboxErr } = await supabase
       .from('campaign_email_accounts')
       .delete()
@@ -449,13 +509,22 @@ export async function saveCampaign(
     if (delInboxErr) return { success: false, error: delInboxErr.message }
 
     if (input.inboxIds.length > 0) {
-      const { error: inboxErr } = await supabase
-        .from('campaign_email_accounts')
-        .insert(input.inboxIds.map((eid) => ({ campaign_id: id, email_account_id: eid })))
-      if (inboxErr) return { success: false, error: inboxErr.message }
+      const { data: validInboxes } = await supabase
+        .from('email_accounts')
+        .select('id')
+        .eq('user_id', user.id)
+        .in('id', input.inboxIds)
+
+      const validInboxIds = (validInboxes || []).map((ib) => ib.id)
+      if (validInboxIds.length > 0) {
+        const { error: inboxErr } = await supabase
+          .from('campaign_email_accounts')
+          .insert(validInboxIds.map((eid) => ({ campaign_id: id, email_account_id: eid })))
+        if (inboxErr) return { success: false, error: inboxErr.message }
+      }
     }
 
-    // 4. Replace telegram recipient assignments
+    // 4. Replace telegram recipient assignments (scoped to user's recipients)
     const { error: delRecipErr } = await supabase
       .from('campaign_telegram_recipients')
       .delete()
@@ -464,10 +533,19 @@ export async function saveCampaign(
     if (delRecipErr) return { success: false, error: delRecipErr.message }
 
     if (input.recipientIds && input.recipientIds.length > 0) {
-      const { error: recipErr } = await supabase
-        .from('campaign_telegram_recipients')
-        .insert(input.recipientIds.map((rid) => ({ campaign_id: id, recipient_id: rid })))
-      if (recipErr) return { success: false, error: recipErr.message }
+      const { data: validRecips } = await supabase
+        .from('telegram_notify_recipients')
+        .select('id')
+        .eq('user_id', user.id)
+        .in('id', input.recipientIds)
+
+      const validRecipIds = (validRecips || []).map((tr) => tr.id)
+      if (validRecipIds.length > 0) {
+        const { error: recipErr } = await supabase
+          .from('campaign_telegram_recipients')
+          .insert(validRecipIds.map((rid) => ({ campaign_id: id, recipient_id: rid })))
+        if (recipErr) return { success: false, error: recipErr.message }
+      }
     }
 
     // 5. Reconcile completed leads whose current_step is behind the (possibly just
@@ -535,6 +613,7 @@ export async function launchCampaign(
   id: string,
   input?: SaveCampaignInput
 ): Promise<{ success: boolean; error?: string }> {
+  const user = await getAuthenticatedUser()
   if (input) {
     const saveResult = await saveCampaign(id, input)
     if (!saveResult.success) return saveResult
@@ -546,6 +625,7 @@ export async function launchCampaign(
       .from('campaigns')
       .update({ status: 'active' })
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) return { success: false, error: error.message }
 
@@ -561,11 +641,13 @@ export async function launchCampaign(
 
 export async function pauseCampaign(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { error } = await supabase
       .from('campaigns')
       .update({ status: 'paused' })
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) return { success: false, error: error.message }
 
@@ -581,8 +663,13 @@ export async function pauseCampaign(id: string): Promise<{ success: boolean; err
 
 export async function deleteCampaign(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
-    const { error } = await supabase.from('campaigns').delete().eq('id', id)
+    const { error } = await supabase
+      .from('campaigns')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
     if (error) return { success: false, error: error.message }
 
     revalidatePath('/campaigns')
@@ -634,7 +721,20 @@ export async function getCampaignLeads(
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
+
+    // Verify campaign ownership
+    const { data: camp, error: campErr } = await supabase
+      .from('campaigns')
+      .select('id')
+      .eq('id', campaignId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (campErr || !camp) {
+      return { success: false, error: 'Campaign not found' }
+    }
 
     let query = supabase
       .from('campaign_leads')
@@ -746,7 +846,21 @@ export async function removeLeadFromCampaign(
   campaignId?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
+
+    // Verify campaign ownership
+    const { data: clRecord } = await supabase
+      .from('campaign_leads')
+      .select('id, campaign_id, campaigns!inner(user_id)')
+      .eq('id', campaignLeadId)
+      .eq('campaigns.user_id', user.id)
+      .maybeSingle()
+
+    if (!clRecord) {
+      return { success: false, error: 'Campaign lead not found' }
+    }
+
     const { error } = await supabase.from('campaign_leads').delete().eq('id', campaignLeadId)
     if (error) return { success: false, error: error.message }
 
@@ -773,7 +887,20 @@ export async function updateCampaignLeadState(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
+
+    // Verify ownership
+    const { data: clRecord } = await supabase
+      .from('campaign_leads')
+      .select('id, campaign_id, campaigns!inner(user_id)')
+      .eq('id', campaignLeadId)
+      .eq('campaigns.user_id', user.id)
+      .maybeSingle()
+
+    if (!clRecord) {
+      return { success: false, error: 'Campaign lead not found' }
+    }
     type CLUpdate = {
       status?: 'pending' | 'active' | 'replied' | 'bounced' | 'paused' | 'completed'
       current_step?: number
@@ -868,9 +995,20 @@ export async function bulkRestartCampaignLeads(
       return { success: false, error: 'No leads selected' }
     }
 
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const chunks = chunkIds(campaignLeadIds, 50)
     for (const chunk of chunks) {
+      // Filter chunk to leads belonging to this user's campaigns
+      const { data: validLeads } = await supabase
+        .from('campaign_leads')
+        .select('id, campaigns!inner(user_id)')
+        .in('id', chunk)
+        .eq('campaigns.user_id', user.id)
+
+      const validIds = (validLeads || []).map((l) => l.id)
+      if (validIds.length === 0) continue
+
       const { error } = await supabase
         .from('campaign_leads')
         .update({
@@ -880,7 +1018,7 @@ export async function bulkRestartCampaignLeads(
           thread_id: null,
           last_message_id: null,
         })
-        .in('id', chunk)
+        .in('id', validIds)
 
       if (error) return { success: false, error: error.message }
     }
@@ -906,13 +1044,23 @@ export async function bulkPauseCampaignLeads(
       return { success: false, error: 'No leads selected' }
     }
 
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const chunks = chunkIds(campaignLeadIds, 50)
     for (const chunk of chunks) {
+      const { data: validLeads } = await supabase
+        .from('campaign_leads')
+        .select('id, campaigns!inner(user_id)')
+        .in('id', chunk)
+        .eq('campaigns.user_id', user.id)
+
+      const validIds = (validLeads || []).map((l) => l.id)
+      if (validIds.length === 0) continue
+
       const { error } = await supabase
         .from('campaign_leads')
         .update({ status: 'paused', next_send_at: null })
-        .in('id', chunk)
+        .in('id', validIds)
 
       if (error) return { success: false, error: error.message }
     }
@@ -938,13 +1086,23 @@ export async function bulkResumeCampaignLeads(
       return { success: false, error: 'No leads selected' }
     }
 
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const chunks = chunkIds(campaignLeadIds, 50)
     for (const chunk of chunks) {
+      const { data: validLeads } = await supabase
+        .from('campaign_leads')
+        .select('id, campaigns!inner(user_id)')
+        .in('id', chunk)
+        .eq('campaigns.user_id', user.id)
+
+      const validIds = (validLeads || []).map((l) => l.id)
+      if (validIds.length === 0) continue
+
       const { error } = await supabase
         .from('campaign_leads')
         .update({ status: 'pending' })
-        .in('id', chunk)
+        .in('id', validIds)
 
       if (error) return { success: false, error: error.message }
     }
@@ -970,10 +1128,20 @@ export async function bulkRemoveCampaignLeads(
       return { success: false, error: 'No leads selected' }
     }
 
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const chunks = chunkIds(campaignLeadIds, 50)
     for (const chunk of chunks) {
-      const { error } = await supabase.from('campaign_leads').delete().in('id', chunk)
+      const { data: validLeads } = await supabase
+        .from('campaign_leads')
+        .select('id, campaigns!inner(user_id)')
+        .in('id', chunk)
+        .eq('campaigns.user_id', user.id)
+
+      const validIds = (validLeads || []).map((l) => l.id)
+      if (validIds.length === 0) continue
+
+      const { error } = await supabase.from('campaign_leads').delete().in('id', validIds)
       if (error) return { success: false, error: error.message }
     }
 

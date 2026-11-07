@@ -5,7 +5,8 @@ import type { Lead } from '@/lib/types/database'
 
 // ─── POST /api/leads ──────────────────────────────────────────────────────────
 //
-// Upserts a lead by email and optionally enrolls it in a campaign.
+// Upserts a lead by email and optionally enrolls it in a campaign,
+// scoped strictly to the authenticated API key's owner.
 //
 // Body parameters:
 //   email                 (required) Lead email address
@@ -17,7 +18,8 @@ import type { Lead } from '@/lib/types/database'
 //                          in campaign_id, skip enrollment (no-op, no re-queue)
 
 export async function POST(req: NextRequest) {
-  if (!(await authenticate(req))) {
+  const authInfo = await authenticate(req)
+  if (!authInfo) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
@@ -36,6 +38,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'email is required' }, { status: 400 })
   }
 
+  const normalizedEmail = email.trim().toLowerCase()
   const supabase = supabaseAdmin()
 
   // ── 1. skip_if_in_lead_list: return existing lead without touching it ──────
@@ -43,7 +46,8 @@ export async function POST(req: NextRequest) {
     const { data: existing } = await supabase
       .from('leads')
       .select('*')
-      .eq('email', email.trim().toLowerCase())
+      .eq('user_id', authInfo.userId)
+      .eq('email', normalizedEmail)
       .maybeSingle()
 
     if (existing) {
@@ -51,15 +55,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── 2. Upsert lead (create or update variables on email conflict) ──────────
+  // ── 2. Upsert lead (create or update variables on email conflict within user pool) ─
   const { data: lead, error: leadError } = await supabase
     .from('leads')
     .upsert(
       {
-        email: email.trim().toLowerCase(),
+        user_id: authInfo.userId,
+        email: normalizedEmail,
         variables: (variables as Record<string, string | number | boolean | null>) ?? {},
       },
-      { onConflict: 'email' }
+      { onConflict: 'user_id, email' }
     )
     .select()
     .single()
@@ -90,6 +95,21 @@ export async function POST(req: NextRequest) {
   let enrollment = null
 
   if (campaign_id && typeof campaign_id === 'string') {
+    // Verify target campaign belongs to the same user
+    const { data: targetCamp } = await supabase
+      .from('campaigns')
+      .select('id')
+      .eq('id', campaign_id)
+      .eq('user_id', authInfo.userId)
+      .maybeSingle()
+
+    if (!targetCamp) {
+      return NextResponse.json(
+        { lead: typedLead, warning: 'Target campaign not found or access denied — enrollment skipped' },
+        { status: 207 }
+      )
+    }
+
     if (skipIfInCampaign) {
       // INSERT … ON CONFLICT DO NOTHING — no-op if already enrolled
       const { data: cl, error: clError } = await supabase
@@ -141,11 +161,12 @@ export async function POST(req: NextRequest) {
 
 // ─── GET /api/leads ───────────────────────────────────────────────────────────
 //
-// List / filter leads.
+// List / filter leads scoped strictly to the authenticated API key's owner.
 // Query params: email (exact match), status, limit (max 200, default 50)
 
 export async function GET(req: NextRequest) {
-  if (!(await authenticate(req))) {
+  const authInfo = await authenticate(req)
+  if (!authInfo) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
@@ -155,7 +176,12 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Number(searchParams.get('limit') ?? '50'), 200)
 
   const supabase = supabaseAdmin()
-  let query = supabase.from('leads').select('*').order('created_at', { ascending: false }).limit(limit)
+  let query = supabase
+    .from('leads')
+    .select('*')
+    .eq('user_id', authInfo.userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
 
   if (email) query = query.eq('email', email.trim().toLowerCase())
   if (status) query = query.eq('status', status as 'active' | 'do_not_contact' | 'bounced')

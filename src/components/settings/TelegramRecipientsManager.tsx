@@ -54,6 +54,7 @@ export function TelegramRecipientsManager({ initialRecipients }: Props) {
             label: label.trim() || null,
             bot_token: botToken.trim(),
             chat_id: chatId.trim(),
+            user_id: '',
             is_active: true,
             created_at: new Date().toISOString(),
           },

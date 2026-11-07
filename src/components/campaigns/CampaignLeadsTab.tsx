@@ -49,6 +49,7 @@ function toLead(item: CampaignLeadItem): Lead {
   return {
     id: item.lead_id,
     email: item.email,
+    user_id: '',
     status: item.lead_status as Lead['status'],
     status_reason: item.lead_status_reason,
     variables: item.variables,

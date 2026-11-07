@@ -14,14 +14,18 @@ export async function hashKey(rawKey: string): Promise<string> {
     .join('')
 }
 
+export interface AuthenticatedApiKey {
+  keyId: string
+  userId: string
+}
+
 /**
  * Authenticates a request by checking the Authorization: Bearer <token> header
  * against the api_keys table (comparing SHA-256 hash).
  *
- * Returns the matched api_keys.id on success (so last_used_at can be updated),
- * or null if the request is unauthenticated / the key is invalid or inactive.
+ * Returns `{ keyId, userId }` on success, or null if unauthenticated.
  */
-export async function authenticate(req: NextRequest): Promise<string | null> {
+export async function authenticate(req: NextRequest): Promise<AuthenticatedApiKey | null> {
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) return null
 
@@ -33,7 +37,7 @@ export async function authenticate(req: NextRequest): Promise<string | null> {
 
   const { data } = await supabase
     .from('api_keys')
-    .select('id')
+    .select('id, user_id')
     .eq('key_hash', hash)
     .eq('is_active', true)
     .maybeSingle()
@@ -46,7 +50,10 @@ export async function authenticate(req: NextRequest): Promise<string | null> {
     .update({ last_used_at: new Date().toISOString() })
     .eq('id', data.id)
 
-  return data.id
+  return {
+    keyId: data.id,
+    userId: data.user_id,
+  }
 }
 
 /**

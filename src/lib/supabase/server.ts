@@ -1,6 +1,9 @@
 import 'server-only'
+import { cache } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient as createSSRServerClient } from '@supabase/ssr'
 import type { Database } from '@/lib/types/database'
+import type { User } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 async function getStoredServerCredentials(): Promise<{
@@ -45,13 +48,62 @@ export function isSetupCompleted(): boolean {
 }
 
 /**
+ * Creates an authenticated Supabase server client scoped to the current user's session cookies.
+ * RLS policies automatically apply based on auth.uid().
+ */
+export async function createSessionServerClient() {
+  const cookieStore = await cookies()
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!url || !anonKey) {
+    throw new Error('Missing Supabase public credentials (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)')
+  }
+
+  return createSSRServerClient<Database>(url, anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll()
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          )
+        } catch {
+          // The `setAll` method was called from a Server Component.
+          // This can be ignored if you have middleware refreshing user sessions.
+        }
+      },
+    },
+  })
+}
+
+/**
+ * Resolves the authenticated user from the current request cookies.
+ * Cached per request/render pass to prevent duplicate auth subrequests.
+ * Throws an Error if no valid session exists.
+ */
+export const getAuthenticatedUser = cache(async (): Promise<User> => {
+  const supabase = await createSessionServerClient()
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser()
+
+  if (error || !user) {
+    throw new Error('Unauthorized: Authentication required')
+  }
+
+  return user
+})
+
+/**
  * Creates a server-side Supabase client with the Service Role key.
  *
- * CRITICAL ARCHITECTURAL CONTRACT:
- * - There is no user login / RLS boundary in the browser.
- * - All Supabase access occurs exclusively server-side via Server Actions / Route Handlers.
- * - This service-role client bypasses RLS and has full administrative access.
- * - NEVER import or expose this client to client components.
+ * NOTE: Bypasses RLS. Used exclusively for background workers (cron),
+ * public webhooks, or elevated administrative operations where explicit
+ * user scoping is applied.
  */
 export function createServerClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
@@ -86,5 +138,5 @@ export function createDynamicServerClient(url: string, serviceRoleKey: string) {
   })
 }
 
-// Convenient export for server-side operations
+// Convenient export for server-side service-role operations
 export const supabaseAdmin = () => createServerClient()

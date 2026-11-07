@@ -1,6 +1,6 @@
 'use server'
 
-import { supabaseAdmin } from '@/lib/supabase/server'
+import { supabaseAdmin, getAuthenticatedUser } from '@/lib/supabase/server'
 import type { ThreadMessage } from '@/lib/types/database'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -47,11 +47,8 @@ export interface GetSmartBoxLeadsOptions {
 /**
  * Returns campaign_leads that have received at least one non-bounce reply
  * (real replies AND auto-detected out-of-office responses; hard bounces are
- * excluded), joined to their lead/campaign info and their latest such reply.
- *
- * "Latest" is computed among non-bounce replies only, so a bounce arriving
- * after a genuine reply never hides that reply from SmartBox, and a
- * campaign_lead whose only reply is a bounce never appears at all.
+ * excluded), joined to their lead/campaign info and their latest such reply,
+ * strictly scoped to the authenticated user's campaigns.
  */
 export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promise<{
   success: boolean
@@ -59,14 +56,15 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const limit = options?.limit ?? 200
 
-    // 1. Fetch every non-bounce reply, most recent first, so the first row
-    // seen per campaign_lead_id below is that lead's latest non-bounce reply.
+    // 1. Fetch non-bounce replies belonging exclusively to campaigns owned by this user
     const { data: replyRows, error: repliesErr } = await supabase
       .from('replies')
-      .select('id, campaign_lead_id, classification, llm_category, snippet, received_at')
+      .select('id, campaign_lead_id, classification, llm_category, snippet, received_at, campaign_leads!inner(campaign_id, campaigns!inner(user_id))')
+      .eq('campaign_leads.campaigns.user_id', user.id)
       .neq('classification', 'bounce')
       .order('received_at', { ascending: false })
 
@@ -95,13 +93,13 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
       return { success: true, data: [] }
     }
 
-    // 2. Fetch the campaign_leads themselves, joined to the lead (variables)
-    // and campaign (name) info SmartBox needs to render.
+    // 2. Fetch the campaign_leads themselves scoped to user's campaigns
     const { data: leadRows, error: leadsErr } = await supabase
       .from('campaign_leads')
       .select(
-        'id, campaign_id, lead_id, status, thread_id, email_account_id, conversation_monitoring, campaigns(id, name), leads(id, email, variables), email_accounts(id, email_address)'
+        'id, campaign_id, lead_id, status, thread_id, email_account_id, conversation_monitoring, campaigns!inner(id, name, user_id), leads(id, email, variables), email_accounts(id, email_address)'
       )
+      .eq('campaigns.user_id', user.id)
       .in('id', eligibleLeadIds)
 
     if (leadsErr) return { success: false, error: leadsErr.message }
@@ -158,7 +156,7 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
 
 /**
  * Returns the full persisted Gmail thread (see `thread_messages`) for one
- * campaign_lead, oldest message first, for rendering a conversation view.
+ * campaign_lead, oldest message first, verifying tenant ownership.
  */
 export async function getLeadThreadMessages(campaignLeadId: string): Promise<{
   success: boolean
@@ -166,7 +164,20 @@ export async function getLeadThreadMessages(campaignLeadId: string): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
+
+    // Verify ownership via campaign
+    const { data: clRecord, error: clErr } = await supabase
+      .from('campaign_leads')
+      .select('id, campaigns!inner(user_id)')
+      .eq('id', campaignLeadId)
+      .eq('campaigns.user_id', user.id)
+      .maybeSingle()
+
+    if (clErr || !clRecord) {
+      return { success: false, error: 'Thread not found or access denied.' }
+    }
 
     const { data, error } = await supabase
       .from('thread_messages')
@@ -185,15 +196,29 @@ export async function getLeadThreadMessages(campaignLeadId: string): Promise<{
 // ─── setConversationMonitoring ──────────────────────────────────────────────
 
 /**
- * Updates campaign_leads.conversation_monitoring for a specific lead.
- * When enabled (true), the reply checker will continue alerting Telegram on new inbound messages.
+ * Updates campaign_leads.conversation_monitoring for a specific lead,
+ * verifying tenant ownership.
  */
 export async function setConversationMonitoring(
   campaignLeadId: string,
   enabled: boolean
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
+
+    // Verify ownership
+    const { data: clRecord, error: clErr } = await supabase
+      .from('campaign_leads')
+      .select('id, campaigns!inner(user_id)')
+      .eq('id', campaignLeadId)
+      .eq('campaigns.user_id', user.id)
+      .maybeSingle()
+
+    if (clErr || !clRecord) {
+      return { success: false, error: 'Campaign lead not found or access denied.' }
+    }
+
     const { error } = await supabase
       .from('campaign_leads')
       .update({ conversation_monitoring: enabled })

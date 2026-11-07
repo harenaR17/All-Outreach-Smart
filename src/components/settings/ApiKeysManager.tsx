@@ -39,6 +39,7 @@ export function ApiKeysManager({ initialKeys }: Props) {
           {
             id: res.id!,
             label: label.trim() || null,
+            user_id: '',
             is_active: true,
             created_at: new Date().toISOString(),
             last_used_at: null,

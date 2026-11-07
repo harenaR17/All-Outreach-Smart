@@ -49,6 +49,7 @@ interface CampaignLeadRow {
   campaigns: {
     id: string
     name: string
+    user_id: string
     stop_on_auto_reply?: boolean
   }
   leads: {
@@ -126,13 +127,26 @@ Deno.serve(async (req: Request) => {
   try {
     // 2. Fetch all active Gemini API keys, Telegram recipients, and campaign recipient assignments
     const [keysRes, tgRes, campaignRecipsRes] = await Promise.all([
-      supabase.from('gemini_api_keys').select('id, api_key, label').eq('is_active', true),
-      supabase.from('telegram_notify_recipients').select('id, chat_id, bot_token, label').eq('is_active', true),
+      supabase.from('gemini_api_keys').select('id, api_key, label, user_id').eq('is_active', true),
+      supabase.from('telegram_notify_recipients').select('id, chat_id, bot_token, label, user_id').eq('is_active', true),
       supabase.from('campaign_telegram_recipients').select('campaign_id, recipient_id'),
     ])
 
-    const geminiKeys: GeminiKeyItem[] = (keysRes.data as GeminiKeyItem[]) || []
-    const telegramRecipients: TelegramRecipientItem[] = (tgRes.data as TelegramRecipientItem[]) || []
+    const geminiKeysByUser = new Map<string, GeminiKeyItem[]>()
+    for (const key of (keysRes.data || []) as unknown as (GeminiKeyItem & { user_id: string })[]) {
+      if (!geminiKeysByUser.has(key.user_id)) {
+        geminiKeysByUser.set(key.user_id, [])
+      }
+      geminiKeysByUser.get(key.user_id)!.push(key)
+    }
+
+    const telegramRecipientsByUser = new Map<string, TelegramRecipientItem[]>()
+    for (const recip of (tgRes.data || []) as unknown as (TelegramRecipientItem & { user_id: string })[]) {
+      if (!telegramRecipientsByUser.has(recip.user_id)) {
+        telegramRecipientsByUser.set(recip.user_id, [])
+      }
+      telegramRecipientsByUser.get(recip.user_id)!.push(recip)
+    }
 
     const campaignRecipientsMap = new Map<string, Set<string>>()
     for (const row of (campaignRecipsRes.data || []) as { campaign_id: string; recipient_id: string }[]) {
@@ -290,10 +304,11 @@ Deno.serve(async (req: Request) => {
                 const fullBody = extractPlainTextBody(msg.payload) || snippet
                 const company = (lead.variables?.company as string) || null
 
+                const userTelegramRecipients = telegramRecipientsByUser.get(campaign.user_id) ?? []
                 const assignedRecipIds = campaignRecipientsMap.get(campaign.id)
                 const targetsToNotify = (assignedRecipIds && assignedRecipIds.size > 0)
-                  ? telegramRecipients.filter((r) => assignedRecipIds.has(r.id))
-                  : telegramRecipients
+                  ? userTelegramRecipients.filter((r) => assignedRecipIds.has(r.id))
+                  : userTelegramRecipients
 
                 if (targetsToNotify.length > 0) {
                   const alertCtx: ConversationAlertContext = {
@@ -418,8 +433,9 @@ Deno.serve(async (req: Request) => {
           let llmCategory: ReplyCategory | null = null
           const company = (lead.variables?.company as string) || null
 
-          if (geminiKeys.length > 0) {
-            const llmRes = await classifyReplyWithGemini(fullBody, { leadCompany: company }, geminiKeys)
+          const userGeminiKeys = geminiKeysByUser.get(campaign.user_id) ?? []
+          if (userGeminiKeys.length > 0) {
+            const llmRes = await classifyReplyWithGemini(fullBody, { leadCompany: company }, userGeminiKeys)
             llmCategory = llmRes.category
             if (llmCategory === null) {
               console.warn(
@@ -436,7 +452,7 @@ Deno.serve(async (req: Request) => {
                 const retryRes = await classifyReplyWithGemini(
                   fullBody,
                   { leadCompany: company, threadHistory: threadTranscript },
-                  geminiKeys,
+                  userGeminiKeys,
                 )
                 if (retryRes.category && retryRes.category !== 'undefined') {
                   llmCategory = retryRes.category
@@ -502,10 +518,11 @@ Deno.serve(async (req: Request) => {
           }
 
           // 4. Dispatch Telegram notifications to campaign-assigned recipients (or all active if none specified)
+          const userTelegramRecipients = telegramRecipientsByUser.get(campaign.user_id) ?? []
           const assignedRecipIds = campaignRecipientsMap.get(campaign.id)
           const targetsToNotify = (assignedRecipIds && assignedRecipIds.size > 0)
-            ? telegramRecipients.filter((r) => assignedRecipIds.has(r.id))
-            : telegramRecipients
+            ? userTelegramRecipients.filter((r) => assignedRecipIds.has(r.id))
+            : userTelegramRecipients
 
           if (targetsToNotify.length > 0) {
             const alertCtx: ReplyAlertContext = {

@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { supabaseAdmin } from '@/lib/supabase/server'
+import { supabaseAdmin, getAuthenticatedUser } from '@/lib/supabase/server'
 import type { GeminiApiKey, TelegramRecipient, ApiKey } from '@/lib/types/database'
 import { sendTelegramNotification } from '@/lib/telegram/notify'
 import { hashKey, generateRawKey } from '@/lib/api-auth'
@@ -14,10 +14,12 @@ export async function getGeminiKeys(): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { data, error } = await supabase
       .from('gemini_api_keys')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) return { success: false, error: error.message }
@@ -32,6 +34,7 @@ export async function addGeminiKey(input: {
   apiKey: string
 }): Promise<{ success: boolean; modelUsed?: string; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const rawKey = input.apiKey.trim()
     if (!rawKey) return { success: false, error: 'API key is required' }
 
@@ -46,6 +49,7 @@ export async function addGeminiKey(input: {
 
     const supabase = supabaseAdmin()
     const { error } = await supabase.from('gemini_api_keys').insert({
+      user_id: user.id,
       label: input.label.trim() || null,
       api_key: rawKey,
       is_active: true,
@@ -65,11 +69,13 @@ export async function toggleGeminiKey(
   isActive: boolean
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { error } = await supabase
       .from('gemini_api_keys')
       .update({ is_active: isActive })
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) return { success: false, error: error.message }
 
@@ -82,8 +88,14 @@ export async function toggleGeminiKey(
 
 export async function deleteGeminiKey(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
-    const { error } = await supabase.from('gemini_api_keys').delete().eq('id', id)
+    const { error } = await supabase
+      .from('gemini_api_keys')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
+
     if (error) return { success: false, error: error.message }
 
     revalidatePath('/settings')
@@ -159,10 +171,12 @@ export async function getTelegramRecipients(): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { data, error } = await supabase
       .from('telegram_notify_recipients')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) return { success: false, error: error.message }
@@ -178,6 +192,7 @@ export async function addTelegramRecipient(input: {
   chatId: string
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const token = input.botToken.trim()
     const chat = input.chatId.trim()
 
@@ -204,6 +219,7 @@ export async function addTelegramRecipient(input: {
 
     const supabase = supabaseAdmin()
     const { error } = await supabase.from('telegram_notify_recipients').insert({
+      user_id: user.id,
       label: input.label.trim() || null,
       bot_token: token,
       chat_id: chat,
@@ -225,11 +241,13 @@ export async function toggleTelegramRecipient(
   isActive: boolean
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { error } = await supabase
       .from('telegram_notify_recipients')
       .update({ is_active: isActive })
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) return { success: false, error: error.message }
 
@@ -243,8 +261,13 @@ export async function toggleTelegramRecipient(
 
 export async function deleteTelegramRecipient(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
-    const { error } = await supabase.from('telegram_notify_recipients').delete().eq('id', id)
+    const { error } = await supabase
+      .from('telegram_notify_recipients')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
     if (error) return { success: false, error: error.message }
 
     revalidatePath('/settings')
@@ -287,10 +310,12 @@ export async function listApiKeys(): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { data, error } = await supabase
       .from('api_keys')
       .select('id, label, is_active, created_at, last_used_at')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) return { success: false, error: error.message }
@@ -312,6 +337,7 @@ export async function createApiKey(label: string): Promise<{
   error?: string
 }> {
   try {
+    const user = await getAuthenticatedUser()
     const rawKey = generateRawKey()
     const keyHash = await hashKey(rawKey)
 
@@ -319,6 +345,7 @@ export async function createApiKey(label: string): Promise<{
     const { data, error } = await supabase
       .from('api_keys')
       .insert({
+        user_id: user.id,
         label: label.trim() || null,
         key_hash: keyHash,
         is_active: true,
@@ -340,11 +367,13 @@ export async function toggleApiKey(
   isActive: boolean
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
     const { error } = await supabase
       .from('api_keys')
       .update({ is_active: isActive })
       .eq('id', id)
+      .eq('user_id', user.id)
 
     if (error) return { success: false, error: error.message }
 
@@ -357,8 +386,13 @@ export async function toggleApiKey(
 
 export async function deleteApiKey(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const user = await getAuthenticatedUser()
     const supabase = supabaseAdmin()
-    const { error } = await supabase.from('api_keys').delete().eq('id', id)
+    const { error } = await supabase
+      .from('api_keys')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id)
     if (error) return { success: false, error: error.message }
 
     revalidatePath('/settings')
@@ -374,6 +408,7 @@ export async function getCronConfig(): Promise<{
   hasCronSecret: boolean
   cronSecretPreview?: string
 }> {
+  await getAuthenticatedUser()
   let cronSecret = process.env.CRON_SECRET?.trim()
   if (!cronSecret) {
     try {
@@ -421,6 +456,7 @@ export async function testWorkerPing(
   data?: any
   error?: string
 }> {
+  await getAuthenticatedUser()
   let appUrl = clientOrigin?.trim().replace(/\/$/, '')
   if (!appUrl) {
     appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000'
@@ -502,6 +538,7 @@ export async function executeWorkerLive(
   data?: any
   error?: string
 }> {
+  await getAuthenticatedUser()
   let appUrl = clientOrigin?.trim().replace(/\/$/, '')
   if (!appUrl) {
     appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000'

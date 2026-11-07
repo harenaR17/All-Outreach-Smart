@@ -40,6 +40,7 @@ export function GeminiKeysManager({ initialKeys }: Props) {
             id: crypto.randomUUID(),
             label: label.trim() || null,
             api_key: apiKey.trim(),
+            user_id: '',
             is_active: true,
             created_at: new Date().toISOString(),
           },
