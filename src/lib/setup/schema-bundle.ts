@@ -557,8 +557,9 @@ BEGIN
   END IF;
 
   ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_email_key;
+  ALTER TABLE leads DROP CONSTRAINT IF EXISTS leads_user_id_email_key;
   DROP INDEX IF EXISTS idx_leads_user_email;
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_user_email ON leads (user_id, lower(email));
+  ALTER TABLE leads ADD CONSTRAINT leads_user_id_email_key UNIQUE (user_id, email);
 
   ALTER TABLE gemini_api_keys ADD COLUMN IF NOT EXISTS user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE;
   IF v_admin_id IS NOT NULL THEN

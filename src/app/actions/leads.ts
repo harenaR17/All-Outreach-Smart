@@ -100,7 +100,7 @@ export async function importLeads(input: ImportLeadsInput): Promise<ImportSummar
     const { data: insertedRows, error: insertErr } = await supabase
       .from('leads')
       .upsert(leadInsertPayload, {
-        onConflict: 'user_id, email',
+        onConflict: 'user_id,email',
         ignoreDuplicates: true,
       })
       .select('id, email')

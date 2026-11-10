@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
         email: normalizedEmail,
         variables: (variables as Record<string, string | number | boolean | null>) ?? {},
       },
-      { onConflict: 'user_id, email' }
+      { onConflict: 'user_id,email' }
     )
     .select()
     .single()
