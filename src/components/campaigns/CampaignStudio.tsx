@@ -9,7 +9,7 @@ import type { EmailAccount, Lead, Campaign, TelegramRecipient } from '@/lib/type
 import type { ActivityEvent, ActivitySummaryStats } from '@/app/actions/activity'
 import { StepEditor } from './StepEditor'
 import { LiveLeadPreview } from './LiveLeadPreview'
-import { InboxPoolSelector } from './InboxPoolSelector'
+import { InboxPoolSelector, type InboxCampaignSettings } from './InboxPoolSelector'
 import { CampaignActionBar } from './CampaignActionBar'
 import { CampaignLeadsTab } from './CampaignLeadsTab'
 import { CampaignAnalyticsTab } from './CampaignAnalyticsTab'
@@ -81,7 +81,25 @@ export function CampaignStudio({
       body_template: s.body_template,
     }))
   )
+  const initialInboxSettings: Record<string, InboxCampaignSettings> = {}
+  for (const c of campaign.inboxConfigs ?? []) {
+    initialInboxSettings[c.inboxId] = {
+      can_send_new_leads: c.can_send_new_leads,
+      can_send_follow_ups: c.can_send_follow_ups,
+    }
+  }
+  for (const id of campaign.inboxIds) {
+    if (!initialInboxSettings[id]) {
+      const ib = allInboxes.find((i) => i.id === id)
+      initialInboxSettings[id] = {
+        can_send_new_leads: ib?.can_send_new_leads ?? true,
+        can_send_follow_ups: ib?.can_send_follow_ups ?? true,
+      }
+    }
+  }
+
   const [selectedInboxIds, setSelectedInboxIds] = useState<string[]>(campaign.inboxIds)
+  const [inboxSettings, setInboxSettings] = useState<Record<string, InboxCampaignSettings>>(initialInboxSettings)
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<string[]>(campaign.recipientIds || [])
   const [copiedId, setCopiedId] = useState(false)
 
@@ -108,6 +126,7 @@ export function CampaignStudio({
     companyLimit: campaign.limit_emails_per_company ? String(campaign.limit_emails_per_company) : '',
     steps: JSON.stringify(campaign.steps),
     inboxIds: JSON.stringify(campaign.inboxIds),
+    inboxSettings: JSON.stringify(initialInboxSettings),
     recipientIds: JSON.stringify(campaign.recipientIds || []),
   })
 
@@ -122,6 +141,7 @@ export function CampaignStudio({
     companyLimit !== initialState.current.companyLimit ||
     JSON.stringify(steps) !== initialState.current.steps ||
     JSON.stringify(selectedInboxIds) !== initialState.current.inboxIds ||
+    JSON.stringify(inboxSettings) !== initialState.current.inboxSettings ||
     JSON.stringify(selectedRecipientIds) !== initialState.current.recipientIds
 
   const isReadOnly = currentStatus === 'active' || currentStatus === 'completed'
@@ -151,8 +171,13 @@ export function CampaignStudio({
     limit_emails_per_company: companyLimit.trim() === '' ? null : Number(companyLimit),
     steps,
     inboxIds: selectedInboxIds,
+    inboxConfigs: selectedInboxIds.map((id) => ({
+      inboxId: id,
+      can_send_new_leads: inboxSettings[id]?.can_send_new_leads ?? true,
+      can_send_follow_ups: inboxSettings[id]?.can_send_follow_ups ?? true,
+    })),
     recipientIds: selectedRecipientIds,
-  }), [name, timezone, workingDays, hoursStart, hoursEnd, stopOnAutoReply, sendPriority, companyLimit, steps, selectedInboxIds, selectedRecipientIds])
+  }), [name, timezone, workingDays, hoursStart, hoursEnd, stopOnAutoReply, sendPriority, companyLimit, steps, selectedInboxIds, inboxSettings, selectedRecipientIds])
 
   // Extract available tokens from campaign leads for the inserter
   const availableTokens = Array.from(
@@ -253,7 +278,11 @@ export function CampaignStudio({
           <InboxPoolSelector
             availableInboxes={allInboxes}
             selectedInboxIds={selectedInboxIds}
-            onChange={setSelectedInboxIds}
+            inboxSettings={inboxSettings}
+            onChange={(ids, settings) => {
+              setSelectedInboxIds(ids)
+              if (settings) setInboxSettings(settings)
+            }}
             disabled={isReadOnly}
           />
         </div>

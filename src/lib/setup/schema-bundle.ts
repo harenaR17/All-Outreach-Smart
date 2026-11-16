@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS email_accounts (
   last_sent_at timestamptz,
   last_new_lead_sent_at timestamptz,
   is_active boolean NOT NULL DEFAULT true,
+  can_send_new_leads boolean NOT NULL DEFAULT true,
+  can_send_follow_ups boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()
 );`,
     },
@@ -123,6 +125,8 @@ CREATE TABLE IF NOT EXISTS campaign_steps (
 CREATE TABLE IF NOT EXISTS campaign_email_accounts (
   campaign_id uuid NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
   email_account_id uuid NOT NULL REFERENCES email_accounts(id) ON DELETE CASCADE,
+  can_send_new_leads boolean NOT NULL DEFAULT true,
+  can_send_follow_ups boolean NOT NULL DEFAULT true,
   PRIMARY KEY (campaign_id, email_account_id)
 );`,
     },
@@ -670,6 +674,20 @@ CREATE POLICY "telegram_notify_recipients_user_isolation" ON telegram_notify_rec
 
 DROP POLICY IF EXISTS "api_keys_user_isolation" ON api_keys;
 CREATE POLICY "api_keys_user_isolation" ON api_keys FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);`,
+    },
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step 22: Granular Inbox Sending Capabilities (00019)
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      label: 'Add granular sending capabilities to inboxes and campaign inboxes',
+      sql: `
+ALTER TABLE email_accounts
+  ADD COLUMN IF NOT EXISTS can_send_new_leads boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS can_send_follow_ups boolean NOT NULL DEFAULT true;
+
+ALTER TABLE campaign_email_accounts
+  ADD COLUMN IF NOT EXISTS can_send_new_leads boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS can_send_follow_ups boolean NOT NULL DEFAULT true;`,
     },
   ]
 }

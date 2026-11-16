@@ -323,6 +323,8 @@ export async function updateInboxSettings(
     daily_send_limit?: number
     min_seconds_between_sends?: number
     is_active?: boolean
+    can_send_new_leads?: boolean
+    can_send_follow_ups?: boolean
     display_name?: string | null
     first_name?: string | null
     last_name?: string | null
@@ -345,6 +347,12 @@ export async function updateInboxSettings(
     }
     if (typeof updates.is_active === 'boolean') {
       updatePayload.is_active = updates.is_active
+    }
+    if (typeof updates.can_send_new_leads === 'boolean') {
+      updatePayload.can_send_new_leads = updates.can_send_new_leads
+    }
+    if (typeof updates.can_send_follow_ups === 'boolean') {
+      updatePayload.can_send_follow_ups = updates.can_send_follow_ups
     }
     if (updates.display_name !== undefined) {
       updatePayload.display_name = updates.display_name

@@ -20,10 +20,17 @@ export interface CampaignWithMeta extends Campaign {
   positiveReplyRate: number
 }
 
+export interface CampaignInboxConfig {
+  inboxId: string
+  can_send_new_leads: boolean
+  can_send_follow_ups: boolean
+}
+
 export interface CampaignDetail extends Campaign {
   steps: CampaignStep[]
   inboxIds: string[]
   inboxes: EmailAccount[]
+  inboxConfigs?: CampaignInboxConfig[]
   recipientIds: string[]
   leadCount: number
 }
@@ -61,6 +68,7 @@ export interface SaveCampaignInput {
   limit_emails_per_company?: number | null
   steps: SaveStepInput[]
   inboxIds: string[]
+  inboxConfigs?: CampaignInboxConfig[]
   recipientIds?: string[]
 }
 
@@ -225,7 +233,7 @@ export async function getCampaignById(id: string): Promise<{
         .order('step_order', { ascending: true }),
       supabase
         .from('campaign_email_accounts')
-        .select('email_account_id, email_accounts(*)')
+        .select('email_account_id, can_send_new_leads, can_send_follow_ups, email_accounts(*)')
         .eq('campaign_id', id),
       supabase
         .from('campaign_telegram_recipients')
@@ -240,6 +248,11 @@ export async function getCampaignById(id: string): Promise<{
     if (campRes.error) return { success: false, error: campRes.error.message }
 
     const inboxIds = (inboxRes.data ?? []).map((r) => r.email_account_id)
+    const inboxConfigs: CampaignInboxConfig[] = (inboxRes.data ?? []).map((r) => ({
+      inboxId: r.email_account_id,
+      can_send_new_leads: r.can_send_new_leads ?? true,
+      can_send_follow_ups: r.can_send_follow_ups ?? true,
+    }))
     const inboxes = (inboxRes.data ?? []).map((r) => {
       // Strip server-only credentials before passing to client components.
       // Private keys and access tokens are only needed in Edge Functions/API routes.
@@ -257,6 +270,7 @@ export async function getCampaignById(id: string): Promise<{
         steps: (stepsRes.data ?? []) as CampaignStep[],
         inboxIds,
         inboxes,
+        inboxConfigs,
         recipientIds,
         leadCount: leadCountRes.count ?? 0,
       },
@@ -395,11 +409,17 @@ export async function duplicateCampaign(sourceId: string): Promise<{
     }
 
     if (source.inboxIds.length > 0) {
+      const configMap = new Map((source.inboxConfigs ?? []).map((c) => [c.inboxId, c]))
       const { error: inboxErr } = await supabase.from('campaign_email_accounts').insert(
-        source.inboxIds.map((emailAccountId) => ({
-          campaign_id: newId,
-          email_account_id: emailAccountId,
-        }))
+        source.inboxIds.map((emailAccountId) => {
+          const cfg = configMap.get(emailAccountId)
+          return {
+            campaign_id: newId,
+            email_account_id: emailAccountId,
+            can_send_new_leads: cfg?.can_send_new_leads ?? true,
+            can_send_follow_ups: cfg?.can_send_follow_ups ?? true,
+          }
+        })
       )
       if (inboxErr) {
         await supabase.from('campaigns').delete().eq('id', newId)
@@ -515,11 +535,25 @@ export async function saveCampaign(
         .eq('user_id', user.id)
         .in('id', input.inboxIds)
 
-      const validInboxIds = (validInboxes || []).map((ib) => ib.id)
-      if (validInboxIds.length > 0) {
+      const validInboxIds = new Set((validInboxes || []).map((ib) => ib.id))
+      const configMap = new Map((input.inboxConfigs ?? []).map((c) => [c.inboxId, c]))
+
+      const toInsert = input.inboxIds
+        .filter((eid) => validInboxIds.has(eid))
+        .map((eid) => {
+          const cfg = configMap.get(eid)
+          return {
+            campaign_id: id,
+            email_account_id: eid,
+            can_send_new_leads: cfg?.can_send_new_leads ?? true,
+            can_send_follow_ups: cfg?.can_send_follow_ups ?? true,
+          }
+        })
+
+      if (toInsert.length > 0) {
         const { error: inboxErr } = await supabase
           .from('campaign_email_accounts')
-          .insert(validInboxIds.map((eid) => ({ campaign_id: id, email_account_id: eid })))
+          .insert(toInsert)
         if (inboxErr) return { success: false, error: inboxErr.message }
       }
     }

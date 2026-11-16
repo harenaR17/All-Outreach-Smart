@@ -106,7 +106,14 @@ interface EmailAccount {
   last_sent_at: string | null
   last_new_lead_sent_at: string | null
   is_active: boolean
+  can_send_new_leads?: boolean
+  can_send_follow_ups?: boolean
   status: string
+}
+
+interface CampaignInbox extends EmailAccount {
+  effective_can_send_new_leads: boolean
+  effective_can_send_follow_ups: boolean
 }
 
 interface CampaignStep {
@@ -234,18 +241,44 @@ Deno.serve(async (req: Request) => {
       //    right before a send actually occurs (step 12).
       const { data: accountRows } = await supabase
         .from('campaign_email_accounts')
-        .select(`email_accounts(
-          id, email_address, display_name, first_name, last_name, role,
-          phone_number, signature, variables, service_account_client_email,
-          daily_send_limit, daily_send_count, min_seconds_between_sends,
-          next_available_at, last_sent_at, last_new_lead_sent_at,
-          is_active, status
-        )`)
+        .select(`
+          can_send_new_leads,
+          can_send_follow_ups,
+          email_accounts(
+            id, email_address, display_name, first_name, last_name, role,
+            phone_number, signature, variables, service_account_client_email,
+            daily_send_limit, daily_send_count, min_seconds_between_sends,
+            next_available_at, last_sent_at, last_new_lead_sent_at,
+            is_active, status, can_send_new_leads, can_send_follow_ups
+          )
+        `)
         .eq('campaign_id', campaign.id)
 
-      const allInboxes: EmailAccount[] = (accountRows ?? [])
-        .map((r: { email_accounts: unknown }) => r.email_accounts as EmailAccount)
-        .filter(Boolean)
+      const allInboxes: CampaignInbox[] = (accountRows ?? [])
+        .map((r: { can_send_new_leads?: boolean; can_send_follow_ups?: boolean; email_accounts: unknown }) => {
+          const account = r.email_accounts as EmailAccount | null
+          if (!account) return null
+
+          // Effective permissions: Global setting acts as strict ceiling on Local campaign setting
+          const effective_can_send_new_leads =
+            account.is_active &&
+            account.status === 'active' &&
+            (account.can_send_new_leads ?? true) &&
+            (r.can_send_new_leads ?? true)
+
+          const effective_can_send_follow_ups =
+            account.is_active &&
+            account.status === 'active' &&
+            (account.can_send_follow_ups ?? true) &&
+            (r.can_send_follow_ups ?? true)
+
+          return {
+            ...account,
+            effective_can_send_new_leads,
+            effective_can_send_follow_ups,
+          }
+        })
+        .filter((i): i is CampaignInbox => i !== null)
 
       if (allInboxes.length === 0) continue
 
@@ -255,11 +288,11 @@ Deno.serve(async (req: Request) => {
       )
       if (activeInboxes.length === 0) continue
 
-      // Inboxes eligible for follow-ups must be active and have remaining daily send capacity.
+      // Inboxes eligible for follow-ups must be active, enabled for follow-ups, and have remaining daily send capacity.
       // Filtering follow-up candidates by these inbox IDs prevents deactivated, removed,
-      // or saturated inboxes from causing head-of-line blocking in the due queue (Option C).
+      // follow-up-paused, or saturated inboxes from causing head-of-line blocking in the due queue.
       const followUpEligibleInboxIds = activeInboxes
-        .filter((inbox) => (inbox.daily_send_count ?? 0) < inbox.daily_send_limit)
+        .filter((inbox) => inbox.effective_can_send_follow_ups && (inbox.daily_send_count ?? 0) < inbox.daily_send_limit)
         .map((inbox) => inbox.id)
 
       // 6. Fetch due campaign leads (buffer of up to 30 candidates to evaluate)
@@ -332,10 +365,10 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // 8. Determine initially eligible inboxes
+      // 8. Determine initially eligible inboxes for new leads
       const now = new Date()
-      const eligibleInboxes: EmailAccount[] = allInboxes.filter((inbox) =>
-        isInboxEligible(inbox, now)
+      const eligibleInboxes: CampaignInbox[] = allInboxes.filter((inbox) =>
+        inbox.effective_can_send_new_leads && isInboxEligible(inbox, now)
       )
 
       // 9. Process each due lead
@@ -379,13 +412,13 @@ Deno.serve(async (req: Request) => {
         }
 
         // 10. Pick inbox
-        let assignedInbox: EmailAccount | null = null
+        let assignedInbox: CampaignInbox | null = null
 
         if (isFirstTouch) {
-          // Re-evaluate inboxes that are eligible right now (cooldown + daily limit)
+          // Re-evaluate inboxes that are eligible right now (cooldown + daily limit + can send new leads)
           const currentNow = new Date()
           const currentlyEligible = eligibleInboxes.filter((inbox) =>
-            isInboxEligible(inbox, currentNow)
+            inbox.effective_can_send_new_leads && isInboxEligible(inbox, currentNow)
           )
 
           if (currentlyEligible.length === 0) {
@@ -407,7 +440,7 @@ Deno.serve(async (req: Request) => {
         } else {
           // Follow-up: must use the same inbox that sent the first email
           const sameInbox = allInboxes.find((i) => i.id === cl.email_account_id) ?? null
-          if (!sameInbox) {
+          if (!sameInbox || !sameInbox.effective_can_send_follow_ups) {
             results.skipped++
             continue
           }

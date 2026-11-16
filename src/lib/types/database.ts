@@ -43,14 +43,20 @@ export type Database = {
         Row: {
           campaign_id: string
           email_account_id: string
+          can_send_new_leads: boolean
+          can_send_follow_ups: boolean
         }
         Insert: {
           campaign_id: string
           email_account_id: string
+          can_send_new_leads?: boolean
+          can_send_follow_ups?: boolean
         }
         Update: {
           campaign_id?: string
           email_account_id?: string
+          can_send_new_leads?: boolean
+          can_send_follow_ups?: boolean
         }
         Relationships: [
           {
@@ -232,6 +238,8 @@ export type Database = {
           google_token_expires_at: string | null
           id: string
           is_active: boolean
+          can_send_new_leads: boolean
+          can_send_follow_ups: boolean
           last_name: string | null
           last_new_lead_sent_at: string | null
           last_sent_at: string | null
@@ -258,6 +266,8 @@ export type Database = {
           google_token_expires_at?: string | null
           id?: string
           is_active?: boolean
+          can_send_new_leads?: boolean
+          can_send_follow_ups?: boolean
           last_name?: string | null
           last_new_lead_sent_at?: string | null
           last_sent_at?: string | null
@@ -284,6 +294,8 @@ export type Database = {
           google_token_expires_at?: string | null
           id?: string
           is_active?: boolean
+          can_send_new_leads?: boolean
+          can_send_follow_ups?: boolean
           last_name?: string | null
           last_new_lead_sent_at?: string | null
           last_sent_at?: string | null
@@ -643,6 +655,9 @@ export type EmailAccount = Database["public"]["Tables"]["email_accounts"]["Row"]
 }
 export type EmailAccountInsert = Database["public"]["Tables"]["email_accounts"]["Insert"]
 export type EmailAccountUpdate = Database["public"]["Tables"]["email_accounts"]["Update"]
+export type CampaignEmailAccount = Database["public"]["Tables"]["campaign_email_accounts"]["Row"]
+export type CampaignEmailAccountInsert = Database["public"]["Tables"]["campaign_email_accounts"]["Insert"]
+export type CampaignEmailAccountUpdate = Database["public"]["Tables"]["campaign_email_accounts"]["Update"]
 
 export type Lead = Database["public"]["Tables"]["leads"]["Row"]
 export type LeadInsert = Database["public"]["Tables"]["leads"]["Insert"]

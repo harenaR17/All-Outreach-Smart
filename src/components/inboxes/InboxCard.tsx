@@ -50,6 +50,8 @@ export function InboxCard({ inbox }: InboxCardProps) {
   const [dailyLimit, setDailyLimit] = useState(inbox.daily_send_limit)
   const [minSeconds, setMinSeconds] = useState(inbox.min_seconds_between_sends)
   const [isActive, setIsActive] = useState(inbox.is_active)
+  const [canSendNewLeads, setCanSendNewLeads] = useState(inbox.can_send_new_leads ?? true)
+  const [canSendFollowUps, setCanSendFollowUps] = useState(inbox.can_send_follow_ups ?? true)
   const [saveIndicator, setSaveIndicator] = useState<string | null>(null)
 
   // Sender profile state
@@ -80,6 +82,32 @@ export function InboxCard({ inbox }: InboxCardProps) {
       const res = await updateInboxSettings(inbox.id, { is_active: nextVal })
       if (res.success) {
         showSaveSuccess(nextVal ? 'Inbox activated' : 'Inbox paused')
+      }
+    })
+  }
+
+  // Handle global new leads capability toggle
+  const handleToggleNewLeads = () => {
+    const nextVal = !canSendNewLeads
+    setCanSendNewLeads(nextVal)
+
+    startTransition(async () => {
+      const res = await updateInboxSettings(inbox.id, { can_send_new_leads: nextVal })
+      if (res.success) {
+        showSaveSuccess(nextVal ? 'New leads sending enabled' : 'New leads sending disabled')
+      }
+    })
+  }
+
+  // Handle global follow-ups capability toggle
+  const handleToggleFollowUps = () => {
+    const nextVal = !canSendFollowUps
+    setCanSendFollowUps(nextVal)
+
+    startTransition(async () => {
+      const res = await updateInboxSettings(inbox.id, { can_send_follow_ups: nextVal })
+      if (res.success) {
+        showSaveSuccess(nextVal ? 'Follow-ups sending enabled' : 'Follow-ups sending disabled')
       }
     })
   }
@@ -242,14 +270,26 @@ export function InboxCard({ inbox }: InboxCardProps) {
                   <ShieldAlert className="w-3 h-3" />
                   Auth Error
                 </span>
-              ) : isActive ? (
+              ) : !isActive ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                  Paused
+                </span>
+              ) : !canSendNewLeads && !canSendFollowUps ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  Sending Paused
+                </span>
+              ) : !canSendNewLeads ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  Follow-ups Only
+                </span>
+              ) : !canSendFollowUps ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  New Leads Only
+                </span>
+              ) : (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   Active
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
-                  Paused
                 </span>
               )}
 
@@ -343,6 +383,72 @@ export function InboxCard({ inbox }: InboxCardProps) {
           >
             <Trash2 className="w-4 h-4" />
           </button>
+        </div>
+      </div>
+
+      {/* Global Sending Capabilities (Ceiling) */}
+      <div className="px-5 py-2.5 border-t border-zinc-800/80 bg-zinc-950/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-zinc-300">Global Capabilities:</span>
+          <span className="text-[10px] text-zinc-500 hidden sm:inline">Hard ceiling for all campaigns</span>
+        </div>
+
+        <div className="flex items-center gap-5">
+          {/* New Leads Toggle */}
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-medium transition-colors ${canSendNewLeads && isActive ? 'text-zinc-200' : 'text-zinc-500'}`}>
+              New Leads
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={canSendNewLeads}
+              onClick={handleToggleNewLeads}
+              disabled={isPending || !isActive}
+              title={!isActive ? 'Activate inbox to adjust capabilities' : 'Allow this inbox to be assigned to new leads'}
+              className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
+                !isActive
+                  ? 'opacity-40 cursor-not-allowed bg-zinc-800'
+                  : canSendNewLeads
+                  ? 'bg-indigo-600'
+                  : 'bg-zinc-800'
+              }`}
+            >
+              <div
+                className={`bg-white w-3.5 h-3.5 rounded-full shadow-md transform transition-transform ${
+                  canSendNewLeads ? 'translate-x-3.5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Follow-ups Toggle */}
+          <div className="flex items-center gap-2">
+            <span className={`text-[11px] font-medium transition-colors ${canSendFollowUps && isActive ? 'text-zinc-200' : 'text-zinc-500'}`}>
+              Follow-ups
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={canSendFollowUps}
+              onClick={handleToggleFollowUps}
+              disabled={isPending || !isActive}
+              title={!isActive ? 'Activate inbox to adjust capabilities' : 'Allow this inbox to send follow-up emails'}
+              className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
+                !isActive
+                  ? 'opacity-40 cursor-not-allowed bg-zinc-800'
+                  : canSendFollowUps
+                  ? 'bg-cyan-600'
+                  : 'bg-zinc-800'
+              }`}
+            >
+              <div
+                className={`bg-white w-3.5 h-3.5 rounded-full shadow-md transform transition-transform ${
+                  canSendFollowUps ? 'translate-x-3.5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </div>
 
