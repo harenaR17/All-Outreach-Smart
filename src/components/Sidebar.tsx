@@ -21,6 +21,7 @@ import {
   ChevronDown,
   Inbox,
   Loader2,
+  Kanban,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useNavigation } from '@/lib/context/NavigationContext'
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone, badge: 'Phase 3' },
   { href: '/activity', label: 'Live Activity', icon: Activity, badge: 'Phase 4' },
   { href: '/smartbox', label: 'SmartBox', icon: Inbox, badge: 'Phase 5' },
+  { href: '/pipeline', label: 'CRM Pipeline', icon: Kanban, badge: 'CRM' },
   { href: '/settings', label: 'Settings & Telegram', icon: Settings, badge: 'Phase 5' },
   { href: '/api-docs', label: 'API Documentation', icon: Code2, badge: 'REST' },
 ]

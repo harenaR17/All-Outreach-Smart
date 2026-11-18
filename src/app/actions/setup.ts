@@ -33,6 +33,7 @@ const EDGE_FUNCTION_CRON_SCHEDULES: Record<string, string> = {
   sender: '* * * * *',
   'reply-checker': '*/3 * * * *',
   'thread-sync': '0 * * * *',
+  'crm-reminder-dispatcher': '*/5 * * * *',
 }
 
 /** Enumerates deployable Edge Function slugs under `supabase/functions/`. */
@@ -279,6 +280,7 @@ export async function runDatabaseMigrations(input: {
   supabaseUrl: string
   supabaseServiceRoleKey: string
   cronSecret: string
+  supabaseAnonKey?: string
   managementToken?: string
   dbConnectionString?: string
   appUrl?: string
@@ -290,12 +292,13 @@ export async function runDatabaseMigrations(input: {
 }> {
   const cleanUrl = input.supabaseUrl.trim().replace(/\/$/, '')
   const cronSecret = input.cronSecret.trim()
+  const cleanAnonKey = input.supabaseAnonKey?.trim() || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || ''
   const managementToken = input.managementToken?.trim()
   const dbConn = input.dbConnectionString?.trim()
   const projectRef = cleanUrl.replace(/^https?:\/\//, '').split('.')[0] || ''
   const appUrl = input.appUrl?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.APP_URL?.trim() || ''
 
-  const steps = getSchemaSteps(cleanUrl, cronSecret, appUrl)
+  const steps = getSchemaSteps(cleanUrl, cronSecret, appUrl, cleanAnonKey)
   const completedSteps: string[] = []
 
   // Strategy A: Supabase Management API Query Endpoint (100% HTTPS - works on Cloudflare & Localhost)
@@ -897,7 +900,8 @@ export async function switchCronToEdgeFunctions(input: {
               'Authorization', 'Bearer ' || (SELECT value FROM cron_config.settings WHERE key = 'anon_key'),
               'x-cron-secret', (SELECT value FROM cron_config.settings WHERE key = 'cron_secret')
             ),
-            body := '{}'::jsonb
+            body := '{}'::jsonb,
+            timeout_milliseconds := 60000
           ) $$
         );`
     })

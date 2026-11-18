@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef, useTransition } from 'react'
+import Link from 'next/link'
 import type { SmartBoxLead } from '@/app/actions/smartbox'
 import { getLeadThreadMessages, setConversationMonitoring } from '@/app/actions/smartbox'
+import { updateLeadCrmStatus, getUserCrmStatuses } from '@/app/actions/crm'
+import type { CrmStatus } from '@/lib/types/crm'
 import { CATEGORY_BADGES, REPLY_CATEGORY_ORDER, type ReplyCategory } from '@/lib/constants/replyCategories'
 import { formatDate } from '@/lib/utils'
 import type { ThreadMessage } from '@/lib/types/database'
@@ -22,6 +25,8 @@ import {
   Mail,
   Bell,
   BellOff,
+  ExternalLink,
+  Kanban,
 } from 'lucide-react'
 
 interface Props {
@@ -39,6 +44,10 @@ function prettifyKey(key: string): string {
 }
 
 export function SmartBoxManager({ initialLeads }: Props) {
+  const [leads, setLeads] = useState<SmartBoxLead[]>(initialLeads)
+  const [availableStatuses, setAvailableStatuses] = useState<CrmStatus[]>([])
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<ReplyCategory | 'all'>('all')
   const [campaignFilter, setCampaignFilter] = useState<string>('all')
@@ -58,8 +67,55 @@ export function SmartBoxManager({ initialLeads }: Props) {
 
   const [monitoringOverrides, setMonitoringOverrides] = useState<Record<string, boolean>>({})
 
+  // Sync internal leads state if initialLeads changes
+  useEffect(() => {
+    setLeads(initialLeads)
+  }, [initialLeads])
+
+  // Fetch available CRM statuses
+  useEffect(() => {
+    getUserCrmStatuses().then((res) => {
+      if (res.success && res.data) {
+        setAvailableStatuses(res.data)
+      }
+    })
+  }, [])
+
   const effectiveMonitoring = (lead: SmartBoxLead) =>
     monitoringOverrides[lead.id] ?? lead.conversationMonitoring
+
+  const handleStatusChange = async (newStatusId: string) => {
+    if (!selectedLead || isUpdatingStatus) return
+    setIsUpdatingStatus(true)
+    const res = await updateLeadCrmStatus({
+      leadId: selectedLead.leadId,
+      newStatusId,
+      campaignId: selectedLead.campaignId,
+    })
+    if (res.success) {
+      const foundStatus = availableStatuses.find((s) => s.id === newStatusId)
+      setLeads((prev) =>
+        prev.map((l) =>
+          l.id === selectedLead.id
+            ? {
+                ...l,
+                crmStatus: foundStatus
+                  ? {
+                      id: foundStatus.id,
+                      displayName: foundStatus.display_name,
+                      icon: foundStatus.icon,
+                      color: foundStatus.color,
+                      track: foundStatus.track,
+                      isTerminal: foundStatus.is_terminal,
+                    }
+                  : null,
+              }
+            : l
+        )
+      )
+    }
+    setIsUpdatingStatus(false)
+  }
 
   // Close the filter popover on an outside click.
   useEffect(() => {
@@ -78,30 +134,30 @@ export function SmartBoxManager({ initialLeads }: Props) {
   // Distinct campaigns present in the current lead set, for the campaign filter.
   const campaignOptions = useMemo(() => {
     const map = new Map<string, { id: string; name: string; count: number }>()
-    for (const lead of initialLeads) {
+    for (const lead of leads) {
       const existing = map.get(lead.campaignId)
       if (existing) existing.count++
       else map.set(lead.campaignId, { id: lead.campaignId, name: lead.campaignName, count: 1 })
     }
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))
-  }, [initialLeads])
+  }, [leads])
 
   // Distinct sending inboxes present in the current lead set, for the inbox filter.
   const inboxOptions = useMemo(() => {
     const map = new Map<string, { id: string; email: string; count: number }>()
-    for (const lead of initialLeads) {
+    for (const lead of leads) {
       const key = lead.emailAccountId ?? UNASSIGNED_INBOX_KEY
       const existing = map.get(key)
       if (existing) existing.count++
       else map.set(key, { id: key, email: lead.inboxEmail ?? 'Unassigned', count: 1 })
     }
     return Array.from(map.values()).sort((a, b) => a.email.localeCompare(b.email))
-  }, [initialLeads])
+  }, [leads])
 
   const hasActiveFilters = categoryFilter !== 'all' || campaignFilter !== 'all' || inboxFilter !== 'all'
 
   const filteredLeads = useMemo(() => {
-    return initialLeads.filter((lead) => {
+    return leads.filter((lead) => {
       if (categoryFilter !== 'all' && lead.latestReply.llmCategory !== categoryFilter) return false
       if (campaignFilter !== 'all' && lead.campaignId !== campaignFilter) return false
       if (inboxFilter !== 'all' && (lead.emailAccountId ?? UNASSIGNED_INBOX_KEY) !== inboxFilter) return false
@@ -118,7 +174,7 @@ export function SmartBoxManager({ initialLeads }: Props) {
 
       return true
     })
-  }, [initialLeads, categoryFilter, campaignFilter, inboxFilter, search])
+  }, [leads, categoryFilter, campaignFilter, inboxFilter, search])
 
   // Keep selection valid as the filtered list changes (e.g. filters/search
   // narrow the list out from under the currently selected lead). Adjusted
@@ -133,8 +189,8 @@ export function SmartBoxManager({ initialLeads }: Props) {
   }
 
   const selectedLead = useMemo(
-    () => initialLeads.find((l) => l.id === effectiveSelectedLeadId) ?? null,
-    [initialLeads, effectiveSelectedLeadId]
+    () => leads.find((l) => l.id === effectiveSelectedLeadId) ?? null,
+    [leads, effectiveSelectedLeadId]
   )
 
   useEffect(() => {
@@ -160,14 +216,14 @@ export function SmartBoxManager({ initialLeads }: Props) {
   }, [effectiveSelectedLeadId])
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: initialLeads.length }
+    const c: Record<string, number> = { all: leads.length }
     for (const cat of REPLY_CATEGORY_ORDER) c[cat] = 0
-    for (const lead of initialLeads) {
+    for (const lead of leads) {
       const cat = lead.latestReply.llmCategory
       if (cat && cat in c) c[cat]++
     }
     return c
-  }, [initialLeads])
+  }, [leads])
 
   return (
     <>
@@ -350,6 +406,21 @@ export function SmartBoxManager({ initialLeads }: Props) {
                       </span>
                       <span className="shrink-0">{formatDate(lead.latestReply.receivedAt)}</span>
                     </div>
+                    {lead.crmStatus && (
+                      <div className="mt-1.5 pt-1.5 border-t border-zinc-800/40 flex items-center">
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border shrink-0"
+                          style={{
+                            backgroundColor: `${lead.crmStatus.color}15`,
+                            borderColor: `${lead.crmStatus.color}35`,
+                            color: lead.crmStatus.color,
+                          }}
+                        >
+                          <span>{lead.crmStatus.icon}</span>
+                          <span className="truncate max-w-[130px]">{lead.crmStatus.displayName}</span>
+                        </span>
+                      </div>
+                    )}
                   </button>
                 )
               })
@@ -429,6 +500,53 @@ export function SmartBoxManager({ initialLeads }: Props) {
                     Fields
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
+                </div>
+              </div>
+
+              {/* CRM Status & Quick Actions Bar */}
+              <div className="w-full rounded-2xl bg-zinc-900/40 border border-zinc-800/80 p-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1.5">
+                    <Kanban className="w-3.5 h-3.5 text-indigo-400" />
+                    CRM Status:
+                  </span>
+                  <select
+                    value={selectedLead.crmStatus?.id || ''}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    disabled={isUpdatingStatus}
+                    className="px-2.5 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer disabled:opacity-50"
+                  >
+                    <option value="" disabled>Select Status...</option>
+                    {availableStatuses.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.icon} {s.display_name}
+                      </option>
+                    ))}
+                  </select>
+                  {isUpdatingStatus && <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {selectedLead.threadId && (
+                    <a
+                      href={`https://mail.google.com/mail/#all/${selectedLead.threadId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-700 text-zinc-200 transition-colors cursor-pointer"
+                      title="Open conversation directly in Gmail"
+                    >
+                      <ExternalLink className="w-3 h-3 text-zinc-400" />
+                      Open in Gmail
+                    </a>
+                  )}
+                  <Link
+                    href={`/pipeline?search=${encodeURIComponent(selectedLead.leadEmail)}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 transition-colors"
+                    title="View full lead record in CRM Pipeline"
+                  >
+                    <Kanban className="w-3 h-3 text-indigo-400" />
+                    Pipeline
+                  </Link>
                 </div>
               </div>
 

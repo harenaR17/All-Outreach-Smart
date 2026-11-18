@@ -10,11 +10,14 @@
  * 5. Dispatches rich Markdown alerts to all active Telegram recipients.
  * 6. Immediately syncs the thread into `thread_messages` (SmartBox unified
  *    inbox) whenever it logs a new non-bounce reply for a lead.
+ * 7. [CRM] Auto-creates or updates a crm_pipeline_entries row for real replies
+ *    classified as interested / not_interested / undefined and schedules the
+ *    appropriate first Telegram reminder via crm_reminders.
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { classifyReplyWithGemini, type GeminiKeyItem, type ReplyCategory } from '../_shared/gemini.ts'
-import { notifyAllRecipients, type TelegramRecipientItem, type ReplyAlertContext, type ConversationAlertContext } from '../_shared/telegram.ts'
+import { notifyAllRecipients, sendTelegramNotification, escapeMd, type TelegramRecipientItem, type ReplyAlertContext, type ConversationAlertContext } from '../_shared/telegram.ts'
 import {
   getGmailAccessToken,
   getHeader,
@@ -23,6 +26,161 @@ import {
   syncThreadMessages,
   type GmailMessage,
 } from '../_shared/gmail.ts'
+
+// ─── CRM Pipeline Auto-Entry ─────────────────────────────────────────────────
+
+type CrmAutoStatus = 'new_interested' | 'not_interested_replied' | 'needs_review'
+
+/**
+ * Upserts a crm_pipeline_entries row for the given lead/user, then schedules
+ * an auto-reminder if appropriate.
+ *
+ * Rules:
+ *  - If no entry exists → insert with the given status and schedule first reminder.
+ *  - If a non-terminal entry already exists → update reply_id/campaign_id only
+ *    and fire a "follow-up reply received" Telegram alert (no new pipeline row).
+ *  - If a terminal entry (closed_won / closed_lost) exists → insert a NEW entry
+ *    so the lead can be re-worked.
+ *
+ * Returns the pipeline entry id (new or existing).
+ */
+async function upsertCrmPipelineEntry(
+  supabase: ReturnType<typeof createClient>,
+  params: {
+    userId: string
+    leadId: string
+    replyId: string | null
+    campaignId: string
+    crmStatus: CrmAutoStatus
+    leadEmail: string
+    leadCompany: string | null
+    campaignName: string
+    noResponseDelayHours: number
+    telegramRecipients: TelegramRecipientItem[]
+    fallbackBotToken?: string
+  }
+): Promise<void> {
+  const {
+    userId, leadId, replyId, campaignId, crmStatus,
+    leadEmail, leadCompany, campaignName,
+    noResponseDelayHours, telegramRecipients, fallbackBotToken,
+  } = params
+
+  const now = new Date()
+
+  // 1. Check for an existing pipeline entry for this (user, lead)
+  const { data: existing } = await supabase
+    .from('crm_pipeline_entries')
+    .select('id, status_id, closed_at')
+    .eq('user_id', userId)
+    .eq('lead_id', leadId)
+    .maybeSingle()
+
+  const TERMINAL_STATUSES = ['closed_won', 'closed_lost']
+  const isTerminal = existing?.closed_at != null || TERMINAL_STATUSES.includes(existing?.status_id ?? '')
+
+  if (existing && !isTerminal) {
+    // ── Existing open entry — update reply reference only ──
+    await supabase
+      .from('crm_pipeline_entries')
+      .update({ reply_id: replyId, campaign_id: campaignId })
+      .eq('id', existing.id)
+
+    // Fire a "follow-up reply received" Telegram alert
+    if (telegramRecipients.length > 0) {
+      const co = leadCompany ? escapeMd(leadCompany) : null
+      const lines = [
+        `🔁 *FOLLOW\\-UP REPLY RECEIVED*`,
+        ``,
+        `👤 *Lead:* \`${escapeMd(leadEmail)}\``,
+        co ? `🏢 *Company:* ${co}` : null,
+        `📢 *Campaign:* ${escapeMd(campaignName)}`,
+        ``,
+        `ℹ️ _Already in pipeline — current status: ${escapeMd(existing.status_id)}_`,
+      ].filter(Boolean).join('\n')
+
+      for (const r of telegramRecipients) {
+        const token = r.bot_token || fallbackBotToken || ''
+        if (token) await sendTelegramNotification(token, r.chat_id, lines)
+      }
+    }
+    return
+  }
+
+  // 2. No entry (or the existing one is terminal) — insert fresh entry
+  const { data: newEntry, error: insertError } = await supabase
+    .from('crm_pipeline_entries')
+    .insert({
+      user_id: userId,
+      lead_id: leadId,
+      reply_id: replyId,
+      campaign_id: campaignId,
+      status_id: crmStatus,
+      entered_at: now.toISOString(),
+      status_changed_at: now.toISOString(),
+    })
+    .select('id')
+    .single()
+
+  if (insertError || !newEntry) {
+    console.error(`[crm] Failed to insert pipeline entry for lead ${leadId}:`, insertError?.message)
+    return
+  }
+
+  const entryId = newEntry.id
+
+  // 3. Log first status history row
+  await supabase.from('crm_status_history').insert({
+    entry_id: entryId,
+    from_status: null,
+    to_status: crmStatus,
+    changed_by: null, // system-triggered
+  })
+
+  // 4. Log auto activity note
+  const autoNoteText = crmStatus === 'new_interested'
+    ? `Lead entered pipeline — classified as Interested by Gemini (campaign: ${campaignName})`
+    : crmStatus === 'not_interested_replied'
+    ? `Lead entered pipeline — classified as Not Interested (recoverable) — campaign: ${campaignName}`
+    : `Lead entered pipeline — reply classified as Undefined / Needs Review — campaign: ${campaignName}`
+
+  await supabase.from('crm_status_activity_log').insert({
+    entry_id: entryId,
+    user_id: userId,
+    note: autoNoteText,
+    source: 'auto',
+  })
+
+  // 5. Schedule auto-reminder only for 'new_interested'
+  //    (not_interested and needs_review get no auto-reminder — manual review only)
+  if (crmStatus === 'new_interested') {
+    const fireAt = new Date(now.getTime() + noResponseDelayHours * 60 * 60 * 1000)
+
+    const co = leadCompany ? escapeMd(leadCompany) : null
+    const delayLabel = noResponseDelayHours === 24 ? '24 hours' : `${noResponseDelayHours} hours`
+    const reminderMsg = [
+      `⏰ *NO\\-RESPONSE REMINDER*`,
+      ``,
+      `👤 *Lead:* \`${escapeMd(leadEmail)}\``,
+      co ? `🏢 *Company:* ${co}` : null,
+      `📢 *Campaign:* ${escapeMd(campaignName)}`,
+      ``,
+      `⚠️ _Interested lead has not been followed up in ${delayLabel}\\._`,
+      `💡 Reply to them before they go cold\\.`,
+    ].filter(Boolean).join('\n')
+
+    await supabase.from('crm_reminders').insert({
+      user_id: userId,
+      entry_id: entryId,
+      reminder_type: 'no_response',
+      fire_at: fireAt.toISOString(),
+      message: reminderMsg,
+      status: 'pending',
+    })
+  }
+}
+
+// (sendTelegramNotification and escapeMd are already imported above from telegram.ts)
 
 const UNSUBSCRIBE_KEYWORDS = [
   'unsubscribe',
@@ -125,12 +283,20 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // 2. Fetch all active Gemini API keys, Telegram recipients, and campaign recipient assignments
-    const [keysRes, tgRes, campaignRecipsRes] = await Promise.all([
+    // 2. Fetch all active Gemini API keys, Telegram recipients, campaign recipient assignments,
+    //    and CRM settings (for no_response_delay_hours per user)
+    const [keysRes, tgRes, campaignRecipsRes, crmSettingsRes] = await Promise.all([
       supabase.from('gemini_api_keys').select('id, api_key, label, user_id').eq('is_active', true),
       supabase.from('telegram_notify_recipients').select('id, chat_id, bot_token, label, user_id').eq('is_active', true),
       supabase.from('campaign_telegram_recipients').select('campaign_id, recipient_id'),
+      supabase.from('crm_settings').select('user_id, no_response_delay_hours'),
     ])
+
+    // Index CRM settings by user_id — default to 24h if no row exists yet
+    const crmSettingsByUser = new Map<string, number>()
+    for (const row of (crmSettingsRes.data || []) as { user_id: string; no_response_delay_hours: number }[]) {
+      crmSettingsByUser.set(row.user_id, row.no_response_delay_hours)
+    }
 
     const geminiKeysByUser = new Map<string, GeminiKeyItem[]>()
     for (const key of (keysRes.data || []) as unknown as (GeminiKeyItem & { user_id: string })[]) {
@@ -542,6 +708,35 @@ Deno.serve(async (req: Request) => {
             if (insertedReply?.id && tgResult.sentCount > 0) {
               await supabase.from('replies').update({ notified_at: new Date().toISOString() }).eq('id', insertedReply.id)
             }
+          }
+
+          // ── [CRM] Auto-create / update pipeline entry ──────────────────────
+          // 'interested'      → new_interested  (auto-reminder after delay)
+          // 'not_interested'  → not_interested_replied (no auto-reminder)
+          // 'undefined' / null→ needs_review    (no auto-reminder)
+          // 'wrong_person' and out_of_office do NOT enter the pipeline.
+          if (llmCategory === 'interested' || llmCategory === 'not_interested' || llmCategory === 'undefined' || llmCategory === null) {
+            const crmStatus =
+              llmCategory === 'interested'     ? 'new_interested'         :
+              llmCategory === 'not_interested' ? 'not_interested_replied' :
+              /* undefined / null */             'needs_review'
+
+            const noResponseDelayHours = crmSettingsByUser.get(campaign.user_id) ?? 24
+            const userTgRecipients = telegramRecipientsByUser.get(campaign.user_id) ?? []
+
+            await upsertCrmPipelineEntry(supabase, {
+              userId: campaign.user_id,
+              leadId: lead.id,
+              replyId: insertedReply?.id ?? null,
+              campaignId: campaign.id,
+              crmStatus: crmStatus as 'new_interested' | 'not_interested_replied' | 'needs_review',
+              leadEmail: lead.email,
+              leadCompany: company,
+              campaignName: campaign.name,
+              noResponseDelayHours,
+              telegramRecipients: userTgRecipients,
+              fallbackBotToken: telegramBotToken,
+            })
           }
 
           existingMsgIds.add(msg.id)

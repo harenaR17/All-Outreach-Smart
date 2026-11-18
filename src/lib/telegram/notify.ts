@@ -177,3 +177,80 @@ export async function notifyAllRecipients(
 
   return { sentCount, errors }
 }
+
+export function formatTelegramCrmReminderMessage(params: {
+  type: 'no_response' | 'meeting' | 'follow_up' | 'custom'
+  leadEmail: string
+  leadCompany?: string | null
+  campaignName?: string | null
+  statusDisplayName?: string | null
+  meetingAt?: string | null
+  customNote?: string | null
+  delayHours?: number
+}): string {
+  const email = escapeMd(params.leadEmail)
+  const company = params.leadCompany ? escapeMd(params.leadCompany) : null
+  const campaign = params.campaignName ? escapeMd(params.campaignName) : null
+  const statusName = params.statusDisplayName ? escapeMd(params.statusDisplayName) : null
+  const note = params.customNote ? escapeMd(params.customNote) : null
+
+  if (params.type === 'no_response') {
+    const delay = params.delayHours === 24 ? '24 hours' : `${params.delayHours || 24} hours`
+    const lines = [
+      `⏰ *NO\\-RESPONSE REMINDER*`,
+      ``,
+      `👤 *Lead:* \`${email}\``,
+      company ? `🏢 *Company:* ${company}` : null,
+      campaign ? `📢 *Campaign:* ${campaign}` : null,
+      ``,
+      `⚠️ _Interested lead has not been followed up in ${escapeMd(delay)}\\._`,
+      `💡 _Reply to them before they go cold\\._`,
+    ].filter(Boolean)
+    return lines.join('\n')
+  }
+
+  if (params.type === 'meeting') {
+    const meetingTimeStr = params.meetingAt
+      ? escapeMd(new Date(params.meetingAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }))
+      : 'Upcoming'
+    const lines = [
+      `📅 *MEETING REMINDER*`,
+      ``,
+      `👤 *Lead:* \`${email}\``,
+      company ? `🏢 *Company:* ${company}` : null,
+      campaign ? `📢 *Campaign:* ${campaign}` : null,
+      ``,
+      `🕒 *Scheduled Meeting:* \`${meetingTimeStr}\``,
+      note ? `📝 *Note:* ${note}` : null,
+    ].filter(Boolean)
+    return lines.join('\n')
+  }
+
+  if (params.type === 'follow_up') {
+    const lines = [
+      `📋 *FOLLOW\\-UP REMINDER*`,
+      ``,
+      `👤 *Lead:* \`${email}\``,
+      company ? `🏢 *Company:* ${company}` : null,
+      campaign ? `📢 *Campaign:* ${campaign}` : null,
+      statusName ? `📌 *Status:* ${statusName}` : null,
+      ``,
+      note ? `📝 *Note:* ${note}` : `🔔 _Time to follow up with this lead\\._`,
+    ].filter(Boolean)
+    return lines.join('\n')
+  }
+
+  // Custom reminder
+  const lines = [
+    `🔔 *CRM REMINDER*`,
+    ``,
+    `👤 *Lead:* \`${email}\``,
+    company ? `🏢 *Company:* ${company}` : null,
+    campaign ? `📢 *Campaign:* ${campaign}` : null,
+    statusName ? `📌 *Status:* ${statusName}` : null,
+    ``,
+    note ? `📝 *Note:* ${note}` : `⏰ _Reminder triggered\\._`,
+  ].filter(Boolean)
+  return lines.join('\n')
+}
+

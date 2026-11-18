@@ -630,6 +630,275 @@ export type Database = {
           },
         ]
       }
+      crm_statuses: {
+        Row: {
+          color: string
+          created_at: string
+          display_name: string
+          icon: string
+          id: string
+          is_archived: boolean
+          is_system: boolean
+          is_terminal: boolean
+          reminder_config: Json | null
+          sort_order: number
+          track: "positive" | "negative" | "neutral"
+          user_id: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          display_name: string
+          icon?: string
+          id: string
+          is_archived?: boolean
+          is_system?: boolean
+          is_terminal?: boolean
+          reminder_config?: Json | null
+          sort_order?: number
+          track?: "positive" | "negative" | "neutral"
+          user_id: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          display_name?: string
+          icon?: string
+          id?: string
+          is_archived?: boolean
+          is_system?: boolean
+          is_terminal?: boolean
+          reminder_config?: Json | null
+          sort_order?: number
+          track?: "positive" | "negative" | "neutral"
+          user_id?: string
+        }
+        Relationships: []
+      }
+      crm_pipeline_entries: {
+        Row: {
+          campaign_id: string | null
+          closed_at: string | null
+          created_at: string
+          entered_at: string
+          id: string
+          last_sent_at: string | null
+          last_sent_inbox_id: string | null
+          lead_id: string
+          meeting_at: string | null
+          notes: string | null
+          reply_id: string | null
+          status_changed_at: string | null
+          status_id: string
+          user_id: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          closed_at?: string | null
+          created_at?: string
+          entered_at?: string
+          id?: string
+          last_sent_at?: string | null
+          last_sent_inbox_id?: string | null
+          lead_id: string
+          meeting_at?: string | null
+          notes?: string | null
+          reply_id?: string | null
+          status_changed_at?: string | null
+          status_id: string
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string | null
+          closed_at?: string | null
+          created_at?: string
+          entered_at?: string
+          id?: string
+          last_sent_at?: string | null
+          last_sent_inbox_id?: string | null
+          lead_id?: string
+          meeting_at?: string | null
+          notes?: string | null
+          reply_id?: string | null
+          status_changed_at?: string | null
+          status_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_pipeline_entries_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_pipeline_entries_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_pipeline_entries_reply_id_fkey"
+            columns: ["reply_id"]
+            isOneToOne: false
+            referencedRelation: "replies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_pipeline_entries_last_sent_inbox_id_fkey"
+            columns: ["last_sent_inbox_id"]
+            isOneToOne: false
+            referencedRelation: "email_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_status_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          entry_id: string
+          from_status: string | null
+          id: string
+          to_status: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          entry_id: string
+          from_status?: string | null
+          id?: string
+          to_status: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          entry_id?: string
+          from_status?: string | null
+          id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_status_history_entry_id_fkey"
+            columns: ["entry_id"]
+            isOneToOne: false
+            referencedRelation: "crm_pipeline_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_status_activity_log: {
+        Row: {
+          created_at: string
+          entry_id: string
+          id: string
+          note: string
+          source: "manual" | "auto"
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          entry_id: string
+          id?: string
+          note: string
+          source?: "manual" | "auto"
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          entry_id?: string
+          id?: string
+          note?: string
+          source?: "manual" | "auto"
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_status_activity_log_entry_id_fkey"
+            columns: ["entry_id"]
+            isOneToOne: false
+            referencedRelation: "crm_pipeline_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_reminders: {
+        Row: {
+          created_at: string
+          entry_id: string
+          fire_at: string
+          fired_at: string | null
+          id: string
+          message: string
+          recipient_id: string | null
+          reminder_type: "no_response" | "meeting" | "follow_up" | "custom"
+          snoozed_until: string | null
+          status: "pending" | "fired" | "snoozed" | "dismissed"
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          entry_id: string
+          fire_at: string
+          fired_at?: string | null
+          id?: string
+          message: string
+          recipient_id?: string | null
+          reminder_type: "no_response" | "meeting" | "follow_up" | "custom"
+          snoozed_until?: string | null
+          status?: "pending" | "fired" | "snoozed" | "dismissed"
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          entry_id?: string
+          fire_at?: string
+          fired_at?: string | null
+          id?: string
+          message?: string
+          recipient_id?: string | null
+          reminder_type?: "no_response" | "meeting" | "follow_up" | "custom"
+          snoozed_until?: string | null
+          status?: "pending" | "fired" | "snoozed" | "dismissed"
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_reminders_entry_id_fkey"
+            columns: ["entry_id"]
+            isOneToOne: false
+            referencedRelation: "crm_pipeline_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_settings: {
+        Row: {
+          created_at: string
+          meeting_reminder_offset_h: number
+          no_response_delay_hours: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          meeting_reminder_offset_h?: number
+          no_response_delay_hours?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          meeting_reminder_offset_h?: number
+          no_response_delay_hours?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

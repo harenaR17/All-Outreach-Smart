@@ -15,6 +15,15 @@ export interface SmartBoxLatestReply {
   receivedAt: string
 }
 
+export interface SmartBoxCrmStatus {
+  id: string
+  displayName: string
+  icon: string
+  color: string
+  track: string
+  isTerminal: boolean
+}
+
 export interface SmartBoxLead {
   /** campaign_leads.id — pass this to getLeadThreadMessages */
   id: string
@@ -31,6 +40,8 @@ export interface SmartBoxLead {
   inboxEmail: string | null
   conversationMonitoring: boolean
   latestReply: SmartBoxLatestReply
+  crmStatus?: SmartBoxCrmStatus | null
+  crmEntryId?: string | null
 }
 
 export interface GetSmartBoxLeadsOptions {
@@ -146,7 +157,51 @@ export async function getSmartBoxLeads(options?: GetSmartBoxLeadsOptions): Promi
     // Most recent conversation activity first.
     results.sort((a, b) => new Date(b.latestReply.receivedAt).getTime() - new Date(a.latestReply.receivedAt).getTime())
 
-    return { success: true, data: results.slice(0, limit) }
+    // 3. Attach CRM pipeline status if available
+    const finalResults = results.slice(0, limit)
+    const leadIds = finalResults.map((r) => r.leadId)
+
+    if (leadIds.length > 0) {
+      const [entriesRes, statusesRes] = await Promise.all([
+        supabase
+          .from('crm_pipeline_entries')
+          .select('id, lead_id, status_id')
+          .eq('user_id', user.id)
+          .in('lead_id', leadIds),
+        supabase
+          .from('crm_statuses')
+          .select('id, display_name, icon, color, track, is_terminal')
+          .eq('user_id', user.id),
+      ])
+
+      const statusMap = new Map<string, SmartBoxCrmStatus>()
+      for (const s of (statusesRes.data || []) as Array<{ id: string; display_name: string; icon: string; color: string; track: string; is_terminal: boolean }>) {
+        statusMap.set(s.id, {
+          id: s.id,
+          displayName: s.display_name,
+          icon: s.icon,
+          color: s.color,
+          track: s.track,
+          isTerminal: s.is_terminal,
+        })
+      }
+
+      const crmByLeadId = new Map<string, { entryId: string; status: SmartBoxCrmStatus }>()
+      for (const e of (entriesRes.data || []) as Array<{ id: string; lead_id: string; status_id: string }>) {
+        const s = statusMap.get(e.status_id)
+        if (s) {
+          crmByLeadId.set(e.lead_id, { entryId: e.id, status: s })
+        }
+      }
+
+      for (const r of finalResults) {
+        const crm = crmByLeadId.get(r.leadId)
+        r.crmStatus = crm?.status || null
+        r.crmEntryId = crm?.entryId || null
+      }
+    }
+
+    return { success: true, data: finalResults }
   } catch (err: unknown) {
     return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
   }
