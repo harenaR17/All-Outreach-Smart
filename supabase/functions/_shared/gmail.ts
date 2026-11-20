@@ -124,12 +124,14 @@ export interface ThreadMessageRecord {
   subject: string | null
   body_text: string | null
   occurred_at: string
+  telegram_notified_at?: string | null
 }
 
 export function toThreadMessageRecord(
   msg: GmailMessage,
   campaignLeadId: string,
-  inboxEmailAddress: string
+  inboxEmailAddress: string,
+  telegramNotifiedAt?: string | null
 ): ThreadMessageRecord {
   const headers = msg.payload?.headers || []
   const bodyText = extractPlainTextBody(msg.payload) || msg.snippet || ''
@@ -146,6 +148,7 @@ export function toThreadMessageRecord(
     occurred_at: Number.isFinite(internalDateMs)
       ? new Date(internalDateMs).toISOString()
       : new Date().toISOString(),
+    telegram_notified_at: telegramNotifiedAt ?? null,
   }
 }
 
@@ -156,13 +159,17 @@ export function toThreadMessageRecord(
  * Used both by `thread-sync`'s hourly batch (one thread fetched per lead) and
  * by `reply-checker`'s immediate inline sync (reusing the thread it just
  * fetched for classification, no extra Gmail call needed).
+ *
+ * If notifiedMsgIds is provided, new records matching those IDs will have
+ * telegram_notified_at set to the current timestamp.
  */
 export async function syncThreadMessages(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Deno isolate has no shared Database generic to import here
   supabase: SupabaseClient<any, any, any>,
   campaignLeadId: string,
   messages: GmailMessage[],
-  inboxEmailAddress: string
+  inboxEmailAddress: string,
+  notifiedMsgIds?: Set<string>
 ): Promise<{ inserted: number; error?: string }> {
   if (messages.length === 0) return { inserted: 0 }
 
@@ -177,9 +184,18 @@ export async function syncThreadMessages(
     (existingRows || []).map((r: { gmail_message_id: string }) => r.gmail_message_id)
   )
 
+  const nowIso = new Date().toISOString()
   const newRecords = messages
     .filter((msg) => !existingIds.has(msg.id))
-    .map((msg) => toThreadMessageRecord(msg, campaignLeadId, inboxEmailAddress))
+    .map((msg) => {
+      const isNotified = notifiedMsgIds?.has(msg.id)
+      return toThreadMessageRecord(
+        msg,
+        campaignLeadId,
+        inboxEmailAddress,
+        isNotified ? nowIso : null
+      )
+    })
 
   if (newRecords.length === 0) return { inserted: 0 }
 

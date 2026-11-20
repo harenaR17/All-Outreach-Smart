@@ -180,7 +180,7 @@ async function handleReplyChecker(req: NextRequest) {
         .select('campaign_lead_id, gmail_message_id, classification, llm_category'),
       supabase
         .from('thread_messages')
-        .select('campaign_lead_id, gmail_message_id'),
+        .select('campaign_lead_id, gmail_message_id, telegram_notified_at'),
     ])
 
     if (threadsRes.error) throw threadsRes.error
@@ -194,11 +194,19 @@ async function handleReplyChecker(req: NextRequest) {
     )
 
     // Build Map<campaignLeadId, Set<gmailMessageId>> of already-synced messages in SmartBox
+    // and Map<campaignLeadId, Set<gmailMessageId>> of messages already alerted to Telegram
     const syncedMsgsByLead = new Map<string, Set<string>>()
-    for (const row of (syncedMsgsRes.data || []) as Array<{ campaign_lead_id: string; gmail_message_id: string }>) {
+    const notifiedMsgsByLead = new Map<string, Set<string>>()
+    for (const row of (syncedMsgsRes.data || []) as Array<{ campaign_lead_id: string; gmail_message_id: string; telegram_notified_at: string | null }>) {
       const set = syncedMsgsByLead.get(row.campaign_lead_id) ?? new Set<string>()
       set.add(row.gmail_message_id)
       syncedMsgsByLead.set(row.campaign_lead_id, set)
+
+      if (row.telegram_notified_at) {
+        const nSet = notifiedMsgsByLead.get(row.campaign_lead_id) ?? new Set<string>()
+        nSet.add(row.gmail_message_id)
+        notifiedMsgsByLead.set(row.campaign_lead_id, nSet)
+      }
     }
 
     // Index replies by campaign_lead_id to evaluate reply/bounce history
@@ -299,16 +307,49 @@ async function handleReplyChecker(req: NextRequest) {
             if (isConvoWatch) {
               // ── Conversation-watch path (no Gemini, no replies table insert) ──
               const syncedIds = syncedMsgsByLead.get(cl.id) ?? new Set<string>()
+              const notifiedIds = notifiedMsgsByLead.get(cl.id) ?? new Set<string>()
+              const newlyNotifiedIds = new Set<string>()
 
               for (let i = 1; i < messages.length; i++) {
                 const msg = messages[i]
                 if (existingMsgIds.has(msg.id)) continue // already logged in replies table
-                if (syncedIds.has(msg.id)) continue     // already recorded in thread_messages -> already notified
+                if (notifiedIds.has(msg.id)) continue    // already notified on Telegram
 
                 const headers = msg.payload?.headers || []
                 const fromHeader = getHeader(headers, 'from') || ''
                 const isSentByUs = (msg.labelIds && msg.labelIds.includes('SENT')) || fromHeader.includes(inbox.email_address)
                 if (isSentByUs) continue
+
+                // Check bounce heuristic for follow-ups
+                const subjectHeader = getHeader(headers, 'subject') || ''
+                const isBounce =
+                  fromHeader.toLowerCase().includes('mailer-daemon') ||
+                  fromHeader.toLowerCase().includes('postmaster') ||
+                  fromHeader.toLowerCase().includes('mail-delivery-system') ||
+                  subjectHeader.toLowerCase().includes('delivery status notification') ||
+                  subjectHeader.toLowerCase().includes('undelivered mail returned') ||
+                  subjectHeader.toLowerCase().includes('delivery failure')
+                if (isBounce) continue
+
+                // Atomic claim: if the message is already present in thread_messages (e.g. from thread-sync or UI),
+                // atomically claim it by setting telegram_notified_at = now()
+                let canNotify = true
+                if (syncedIds.has(msg.id)) {
+                  const { data: claimed } = await supabase
+                    .from('thread_messages')
+                    .update({ telegram_notified_at: new Date().toISOString() })
+                    .eq('campaign_lead_id', cl.id)
+                    .eq('gmail_message_id', msg.id)
+                    .is('telegram_notified_at', null)
+                    .select('id')
+
+                  if (!claimed || claimed.length === 0) {
+                    // Another process concurrently claimed or already notified it
+                    canNotify = false
+                  }
+                }
+
+                if (!canNotify) continue
 
                 const snippet = msg.snippet || ''
                 const fullBody = extractPlainTextBody(msg.payload) || snippet
@@ -332,11 +373,27 @@ async function handleReplyChecker(req: NextRequest) {
                   const tgResult = await notifyAllRecipients(targetsToNotify, alertCtx, telegramBotToken, 'conversation')
                   results.telegramNotificationsSent += tgResult.sentCount
                   results.conversationAlertsSent += tgResult.sentCount
+
+                  if (tgResult.sentCount > 0) {
+                    notifiedIds.add(msg.id)
+                    newlyNotifiedIds.add(msg.id)
+                  } else if (syncedIds.has(msg.id)) {
+                    // Revert atomic claim if dispatch failed so retry can happen
+                    await supabase
+                      .from('thread_messages')
+                      .update({ telegram_notified_at: null })
+                      .eq('campaign_lead_id', cl.id)
+                      .eq('gmail_message_id', msg.id)
+                  }
+                } else {
+                  // No recipients configured, mark notified to avoid repeated checks
+                  notifiedIds.add(msg.id)
+                  newlyNotifiedIds.add(msg.id)
                 }
               }
 
-              // Always sync thread_messages so new messages are deduped on future runs
-              const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address)
+              // Always sync thread_messages with newlyNotifiedIds
+              const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address, newlyNotifiedIds)
               if (syncResult.error) {
                 results.errors.push(`thread_messages sync failed for lead ${cl.lead_id}: ${syncResult.error}`)
               } else {
@@ -573,7 +630,11 @@ async function handleReplyChecker(req: NextRequest) {
 
             // 7. Immediate SmartBox thread sync
             if (hasNewNonBounceReply) {
-              const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address)
+              const notifiedSet = new Set<string>()
+              for (const r of messages) {
+                if (existingMsgIds.has(r.id)) notifiedSet.add(r.id)
+              }
+              const syncResult = await syncThreadMessages(supabase, cl.id, messages, inbox.email_address, notifiedSet)
               if (syncResult.error) {
                 results.errors.push(`thread_messages sync failed for lead ${cl.lead_id}: ${syncResult.error}`)
               } else {
@@ -581,6 +642,16 @@ async function handleReplyChecker(req: NextRequest) {
                   .from('campaign_leads')
                   .update({ last_thread_synced_at: new Date().toISOString() })
                   .eq('id', cl.id)
+              }
+
+              // Also ensure any existing row for this message in thread_messages is marked notified
+              if (notifiedSet.size > 0) {
+                await supabase
+                  .from('thread_messages')
+                  .update({ telegram_notified_at: new Date().toISOString() })
+                  .eq('campaign_lead_id', cl.id)
+                  .in('gmail_message_id', Array.from(notifiedSet))
+                  .is('telegram_notified_at', null)
               }
             }
           } catch (leadErr) {

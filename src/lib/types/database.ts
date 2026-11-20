@@ -594,6 +594,7 @@ export type Database = {
           id: string
           occurred_at: string
           subject: string | null
+          telegram_notified_at: string | null
           to_address: string | null
         }
         Insert: {
@@ -606,6 +607,7 @@ export type Database = {
           id?: string
           occurred_at?: string
           subject?: string | null
+          telegram_notified_at?: string | null
           to_address?: string | null
         }
         Update: {
@@ -618,6 +620,7 @@ export type Database = {
           id?: string
           occurred_at?: string
           subject?: string | null
+          telegram_notified_at?: string | null
           to_address?: string | null
         }
         Relationships: [

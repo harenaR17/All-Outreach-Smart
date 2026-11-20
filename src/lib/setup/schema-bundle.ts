@@ -198,11 +198,14 @@ CREATE TABLE IF NOT EXISTS thread_messages (
   subject text,
   body_text text,
   occurred_at timestamptz NOT NULL DEFAULT now(),
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  telegram_notified_at timestamptz DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_thread_messages_campaign_lead
-  ON thread_messages (campaign_lead_id);`,
+  ON thread_messages (campaign_lead_id);
+CREATE INDEX IF NOT EXISTS idx_thread_messages_notified
+  ON thread_messages (campaign_lead_id, telegram_notified_at);`,
     },
     {
       label: 'Create telegram_notify_recipients table',
@@ -465,11 +468,14 @@ CREATE TABLE IF NOT EXISTS thread_messages (
   subject text,
   body_text text,
   occurred_at timestamptz NOT NULL DEFAULT now(),
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  telegram_notified_at timestamptz DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_thread_messages_campaign_lead
-  ON thread_messages (campaign_lead_id);`,
+  ON thread_messages (campaign_lead_id);
+CREATE INDEX IF NOT EXISTS idx_thread_messages_notified
+  ON thread_messages (campaign_lead_id, telegram_notified_at);`,
     },
 
     // ─────────────────────────────────────────────────────────────────────────

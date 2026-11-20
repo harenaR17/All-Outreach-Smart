@@ -116,12 +116,14 @@ export interface ThreadMessageRecord {
   subject: string | null
   body_text: string | null
   occurred_at: string
+  telegram_notified_at?: string | null
 }
 
 export function toThreadMessageRecord(
   msg: GmailMessage,
   campaignLeadId: string,
   inboxEmailAddress: string,
+  telegramNotifiedAt?: string | null,
 ): ThreadMessageRecord {
   const headers = msg.payload?.headers || []
   const bodyText = extractPlainTextBody(msg.payload) || msg.snippet || ''
@@ -136,18 +138,23 @@ export function toThreadMessageRecord(
     subject: getHeader(headers, 'subject'),
     body_text: bodyText || null,
     occurred_at: Number.isFinite(internalDateMs) ? new Date(internalDateMs).toISOString() : new Date().toISOString(),
+    telegram_notified_at: telegramNotifiedAt ?? null,
   }
 }
 
 /**
  * Diffs a fetched Gmail thread against already-synced `thread_messages` rows
  * for one campaign_lead and inserts only the messages that are new.
+ *
+ * If notifiedMsgIds is provided, new records matching those IDs will have
+ * telegram_notified_at set to the current timestamp.
  */
 export async function syncThreadMessages(
   supabase: ReturnType<typeof supabaseAdmin>,
   campaignLeadId: string,
   messages: GmailMessage[],
   inboxEmailAddress: string,
+  notifiedMsgIds?: Set<string>,
 ): Promise<{ inserted: number; error?: string }> {
   if (messages.length === 0) return { inserted: 0 }
 
@@ -160,9 +167,18 @@ export async function syncThreadMessages(
 
   const existingIds = new Set((existingRows || []).map((r) => r.gmail_message_id))
 
+  const nowIso = new Date().toISOString()
   const newRecords = messages
     .filter((msg) => !existingIds.has(msg.id))
-    .map((msg) => toThreadMessageRecord(msg, campaignLeadId, inboxEmailAddress))
+    .map((msg) => {
+      const isNotified = notifiedMsgIds?.has(msg.id)
+      return toThreadMessageRecord(
+        msg,
+        campaignLeadId,
+        inboxEmailAddress,
+        isNotified ? nowIso : null,
+      )
+    })
 
   if (newRecords.length === 0) return { inserted: 0 }
 
